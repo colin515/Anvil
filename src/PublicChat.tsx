@@ -1,53 +1,221 @@
-import {useEffect,useRef,useState,type FormEvent} from 'react';
-import {ArrowUp,Flame,WifiOff,LoaderCircle,MessageSquareText} from 'lucide-react';
+import {useCallback,useEffect,useRef,useState,type FormEvent} from 'react';
+import {ArrowUp,Check,ChevronLeft,Copy,Menu,MessageSquare,Plus,Square,Trash2,Pencil,WifiOff,LockKeyhole,PanelLeftClose,PanelLeftOpen,Flame,AlertCircle} from 'lucide-react';
 
 type Message={role:'user'|'assistant';content:string};
-type HostInfo={online:boolean;model:string|null;activeRequests:number;maxConcurrent:number};
+type Conversation={id:string;title:string;messages:Message[];updated:number};
+type HostInfo={online:boolean;model:string|null;activeRequests:number;maxConcurrent:number;accessEnabled:boolean};
+type Session={authenticated:boolean;accessEnabled:boolean};
+const STORE='anvil:conversations:v2';
+const createChat=():Conversation=>({id:crypto.randomUUID(),title:'New conversation',messages:[],updated:Date.now()});
+function readSaved():Conversation[]{
+  try{
+    const value=JSON.parse(localStorage.getItem(STORE)||'[]');
+    return Array.isArray(value)?value.filter(c=>typeof c?.id==='string'&&Array.isArray(c.messages)&&typeof c.title==='string').slice(0,80):[];
+  }catch{return [];}
+}
+function escapeTitle(text:string){return text.replace(/\s+/g,' ').trim().slice(0,46)||'New conversation';}
 
+function ChatText({value}:{value:string}){
+  return <div className="anvil-answer">{value.split(/(```[\s\S]*?```)/g).map((part,i)=>
+    part.startsWith('```')?<pre key={i}><code>{part.slice(3,-3).replace(/^\w+\n/,'')}</code></pre>:<span key={i}>{part}</span>)}</div>;
+}
 export function PublicChat(){
   const [host,setHost]=useState<HostInfo|null>(null);
-  const [messages,setMessages]=useState<Message[]>([]);
+  const [session,setSession]=useState<Session>({authenticated:false,accessEnabled:true});
+  const [code,setCode]=useState('');
+  const [error,setError]=useState('');
+  const [loginBusy,setLoginBusy]=useState(false);
+  const [conversations,setConversations]=useState<Conversation[]>(readSaved);
+  const [selected,setSelected]=useState<string|null>(null);
   const [input,setInput]=useState('');
   const [busy,setBusy]=useState(false);
-  const [error,setError]=useState('');
-  const scrollRef=useRef<HTMLDivElement>(null);
-  const anchored=useRef(true);
+  const [sidebar,setSidebar]=useState(true);
+  const [copied,setCopied]=useState<number|null>(null);
+  const scroller=useRef<HTMLDivElement>(null);
+  const pinned=useRef(true);
   const textarea=useRef<HTMLTextAreaElement>(null);
-  useEffect(()=>{
-    void fetch('/api/status').then(r=>r.json())
-      .then(h=>setHost(h))
-      .catch(()=>setHost({online:false,model:null,activeRequests:0,maxConcurrent:2}));
-  },[]);
-  useEffect(()=>{if(anchored.current)scrollRef.current?.scrollTo({top:scrollRef.current.scrollHeight,behavior:'instant'});},[messages]);
+  const controller=useRef<AbortController|null>(null);
+  const frame=useRef(0);
+  const pending=useRef<{id:string;messages:Message[]}|null>(null);
+  const current=conversations.find(c=>c.id===selected)||null;
+  const messages=current?.messages||[];
 
-  async function send(event?:FormEvent){
-    event?.preventDefault();const content=input.trim();if(!content||busy)return;
-    const outgoing=[...messages,{role:'user' as const,content}];
-    setMessages([...outgoing,{role:'assistant',content:''}]);setInput('');setBusy(true);setError('');anchored.current=true;
+  const refresh=useCallback(async()=>{
     try{
-      const res=await fetch('/api/chat',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({messages:outgoing})});
-      if(!res.ok||!res.body){const body=await res.json().catch(()=>({error:'The host is unavailable.'}));throw new Error(body.error||'Chat failed');}
-      const reader=res.body.getReader();const decoder=new TextDecoder();let buffer='';let reply='';let frame=0;
-      const update=()=>{if(frame)return;frame=requestAnimationFrame(()=>{frame=0;setMessages([...outgoing,{role:'assistant',content:reply}])})};
-      while(true){const {value,done}=await reader.read();if(done)break;buffer+=decoder.decode(value,{stream:true});
-        const blocks=buffer.split('\n\n');buffer=blocks.pop()||'';
-        for(const block of blocks){for(const line of block.split('\n')){if(!line.startsWith('data: '))continue;
-          try{const payload=JSON.parse(line.slice(6));if(payload.error)throw new Error(payload.error);
-            if(payload.token){reply+=payload.token;update();}}
-          catch(e){if(e instanceof SyntaxError)continue;throw e;}
-        }}
+      const [h,s]=await Promise.all([fetch('/api/status',{cache:'no-store'}),fetch('/api/session',{cache:'no-store'})]);
+      if(!h.ok||!s.ok)throw Error('Server unavailable');
+      setHost(await h.json());setSession(await s.json());
+    }catch{setHost({online:false,model:null,activeRequests:0,maxConcurrent:2,accessEnabled:true});}
+  },[]);
+  useEffect(()=>{void refresh();const i=window.setInterval(()=>void refresh(),7000);return()=>window.clearInterval(i)},[refresh]);
+  useEffect(()=>{const t=window.setTimeout(()=>{
+    try{localStorage.setItem(STORE,JSON.stringify(conversations));}
+    catch{setError('Browser storage is full. Export important messages or delete old conversations.');}
+  },350);return()=>clearTimeout(t);},[conversations]);
+  useEffect(()=>{if(!selected&&conversations.length)setSelected(conversations[0].id)},[]);
+  useEffect(()=>{if(pinned.current)scroller.current?.scrollTo({top:scroller.current.scrollHeight,behavior:'instant'})},[messages]);
+  useEffect(()=>{if(textarea.current){textarea.current.style.height='auto';textarea.current.style.height=Math.min(240,textarea.current.scrollHeight)+'px'}},[input]);
+  useEffect(()=>()=>{controller.current?.abort();cancelAnimationFrame(frame.current)},[]);
+
+  function updateChat(id:string,items:Message[]){
+    setConversations(old=>old.map(c=>c.id===id?{...c,messages:items,title:c.messages.length===0&&items[0]?.role==='user'?escapeTitle(items[0].content):c.title,updated:Date.now()}:c));
+  }
+  function newChat(){
+    if(busy)stop();
+    setSelected(null);setInput('');setError('');pinned.current=true;
+    textarea.current?.focus();
+    if(window.innerWidth<750)setSidebar(false);
+  }
+  function chooseChat(id:string){
+    if(busy)stop();
+    setSelected(id);setError('');pinned.current=true;
+    if(window.innerWidth<750)setSidebar(false);
+  }
+  function renameChat(id:string){
+    const chat=conversations.find(c=>c.id===id);if(!chat)return;
+    const title=window.prompt('Conversation name',chat.title);
+    if(title?.trim())setConversations(old=>old.map(c=>c.id===id?{...c,title:escapeTitle(title)}:c));
+  }
+  function deleteChat(id:string){
+    if(!window.confirm('Delete this saved conversation from this browser?'))return;
+    if(id===selected&&busy)stop();
+    setConversations(old=>old.filter(c=>c.id!==id));
+    if(id===selected)setSelected(null);
+  }
+  function stop(){controller.current?.abort();controller.current=null;setBusy(false);}
+  function flush(){
+    cancelAnimationFrame(frame.current);
+    frame.current=requestAnimationFrame(()=>{
+      const record=pending.current;
+      if(record)updateChat(record.id,record.messages);
+      frame.current=0;
+    });
+  }
+  async function login(e:FormEvent){
+    e.preventDefault();setLoginBusy(true);setError('');
+    try{
+      const r=await fetch('/api/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code})});
+      const data=await r.json();if(!r.ok)throw Error(data.error||'Invalid code');
+      setSession({authenticated:true,accessEnabled:true});setCode('');
+    }catch(e){setError(e instanceof Error?e.message:'Login failed');}
+    finally{setLoginBusy(false);}
+  }
+  async function send(event?:FormEvent){
+    event?.preventDefault();
+    const content=input.trim();if(!content||busy)return;
+    if(content.length>120000){setError('A single message can use up to 120,000 characters for safety.');return;}
+    let id=selected;
+    const newConversation=!id?createChat():null;
+    if(newConversation){id=newConversation.id;setSelected(id);setConversations(old=>[newConversation,...old].slice(0,80));}
+    if(!id)return;
+    const outgoing=[...messages,{role:'user' as const,content}];
+    const initial=[...outgoing,{role:'assistant' as const,content:''}];
+    setInput('');setBusy(true);setError('');pinned.current=true;
+    updateChat(id,initial);
+    const abort=new AbortController();controller.current=abort;
+    let answer='',buffer='',streamError:string|null=null;
+    try{
+      const r=await fetch('/api/chat',{method:'POST',headers:{'content-type':'application/json'},
+        body:JSON.stringify({messages:outgoing.slice(-72)}),signal:abort.signal});
+      if(r.status===401){setSession({authenticated:false,accessEnabled:true});throw Error('Access code required');}
+      if(!r.ok||!r.body){const d=await r.json().catch(()=>({error:'Could not contact model'}));throw Error(d.error||'Could not contact model');}
+      const reader=r.body.getReader(),decoder=new TextDecoder();
+      while(true){
+        const {done,value}=await reader.read();if(done)break;
+        buffer+=decoder.decode(value,{stream:true});
+        const chunks=buffer.split('\n\n');buffer=chunks.pop()||'';
+        for(const chunk of chunks){
+          for(const line of chunk.split('\n')){
+            if(!line.startsWith('data: '))continue;
+            let payload:{token?:string;error?:string;done?:boolean};
+            try{payload=JSON.parse(line.slice(6));}catch{continue}
+            if(payload.error){streamError=payload.error;break;}
+            if(payload.token){
+              answer+=payload.token;
+              pending.current={id,messages:[...outgoing,{role:'assistant',content:answer}]};
+              flush();
+            }
+          }
+          if(streamError)break;
+        }
+        if(streamError)break;
       }
-      if(frame)cancelAnimationFrame(frame);setMessages([...outgoing,{role:'assistant',content:reply}]);
-    }catch(e){setError(e instanceof Error?e.message:'The host is unavailable');setMessages(prev=>prev.map((m,i)=>i===prev.length-1&&m.role==='assistant'&&!m.content?{...m,content:'The response could not be completed.'}:m));}
-    finally{setBusy(false);textarea.current?.focus();}
+      if(streamError)throw Error(streamError);
+      if(!abort.signal.aborted)updateChat(id,[...outgoing,{role:'assistant',content:answer}]);
+    }catch(e){
+      const aborting=abort.signal.aborted;
+      if(!aborting)setError(e instanceof Error?e.message:'The response could not be completed');
+      updateChat(id,[...outgoing,...(answer?[{role:'assistant' as const,content:answer}]:[])]);
+    }finally{
+      cancelAnimationFrame(frame.current);frame.current=0;pending.current=null;
+      controller.current=null;setBusy(false);textarea.current?.focus();
+    }
+  }
+  async function copyMessage(value:string,index:number){
+    try{await navigator.clipboard.writeText(value);setCopied(index);setTimeout(()=>setCopied(null),1400)}catch{setError('Copy is not available in this browser.');}
   }
   const offline=host&&!host.online;
-  return <div className="public-app">
-    <header className="public-header"><div className="brand"><div className="brand-icon"><Flame size={21}/></div><strong>anvil</strong><span className="brand-badge">LOCAL CHAT</span></div><div className="public-host-status"><span className={`status-dot ${offline?'off':''}`}/>{offline?'Host offline':host?.model||'Connecting…'}</div></header>
-    {!host||offline?<main className="public-centered"><div className="big-line-icon"><WifiOff size={32}/></div><h1>{offline?'Local server is offline.':'Connecting to your host.'}</h1><p>{offline?'Open Anvil on your PC and start the local server to chat here.':'Checking the host connection…'}</p></main>
-    :<><div className="public-conversation" ref={scrollRef} onScroll={e=>{const el=e.currentTarget;anchored.current=el.scrollHeight-el.scrollTop-el.clientHeight<120}} aria-label="Conversation">
-      {messages.length===0?<div className="empty-chat"><div className="empty-orbit"><Flame size={34}/></div><span className="eyebrow">YOUR LOCAL WORKSPACE</span><h1>What can I help with?</h1><p>Your AI runs privately on this computer.</p><div className="suggestions">{['Explain a complex idea simply','Help me write something','Brainstorm a new project'].map(s=><button key={s} onClick={()=>{setInput(s);textarea.current?.focus()}}>{s}</button>)}</div></div>:
-        <div className="chat-thread" aria-live="off">{messages.map((m,i)=><div key={i} className={`message ${m.role}`}><div className="message-avatar">{m.role==='assistant'?<Flame size={15}/>:<MessageSquareText size={15}/>}</div><div className="message-body"><span className="message-label">{m.role==='assistant'?'Anvil':'You'}</span><div className="message-text">{m.content||(busy&&i===messages.length-1?<span className="thinking"><LoaderCircle size={16}/> Thinking…</span>:'')}{busy&&i===messages.length-1&&m.content&&<span className="stream-caret"/>}</div></div></div>)}</div>}
-    </div><div className="public-composer-wrap"><form className="public-composer" onSubmit={send}><textarea ref={textarea} rows={2} value={input} maxLength={2500} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();void send()}}} placeholder="Message Anvil…" disabled={busy}/><div className="composer-bottom"><span>Local model · {host.model}</span><button type="submit" disabled={busy||!input.trim()} aria-label="Send message"><ArrowUp size={18}/></button></div></form>{error&&<p className="chat-error" role="alert">{error}</p>}<p className="composer-caption">AI can make mistakes. Verify important information.</p></div></>}
+  const authenticated=!session.accessEnabled||session.authenticated;
+  const ordered=[...conversations].sort((a,b)=>b.updated-a.updated);
+  return <div className="anvil-chat-app">
+    <aside className={`anvil-chat-sidebar ${sidebar?'expanded':'collapsed'}`}>
+      <div className="anvil-chat-side-top">
+        <button className="anvil-chat-rail-button" aria-label={sidebar?'Collapse sidebar':'Expand sidebar'} title={sidebar?'Collapse sidebar':'Expand sidebar'} onClick={()=>setSidebar(v=>!v)}>{sidebar?<PanelLeftClose size={20}/>:<PanelLeftOpen size={20}/>}</button>
+        {sidebar&&<span className="anvil-chat-wordmark"><Flame size={18}/> Anvil</span>}
+      </div>
+      <button className="anvil-chat-new" onClick={newChat} title="New chat"><Plus size={19}/>{sidebar&&<span>New chat</span>}</button>
+      {sidebar&&<>
+        <div className="anvil-chat-history-label">RECENT CHATS</div>
+        <div className="anvil-chat-history">
+          {ordered.length===0?<p className="anvil-chat-nohistory">Your conversations will appear here and stay saved in this browser.</p>:
+          ordered.map(c=><div key={c.id} className={`anvil-chat-history-row ${selected===c.id?'selected':''}`}>
+            <button className="anvil-chat-history-select" onClick={()=>chooseChat(c.id)} title={c.title}><MessageSquare size={16}/><span>{c.title}</span></button>
+            <button onClick={()=>renameChat(c.id)} title="Rename" aria-label="Rename chat"><Pencil size={13}/></button>
+            <button onClick={()=>deleteChat(c.id)} title="Delete" aria-label="Delete chat"><Trash2 size={13}/></button>
+          </div>)}
+        </div>
+      </>}
+      <div className="anvil-chat-side-bottom"><span className="anvil-chat-status-dot"/>{sidebar&&<span>LAN AI · Your PC</span>}</div>
+    </aside>
+    <main className="anvil-chat-content">
+      <header className="anvil-chat-topbar">
+        <button className="anvil-chat-mobile-menu" title="Menu" aria-label="Menu" onClick={()=>setSidebar(v=>!v)}><Menu size={20}/></button>
+        <span className="anvil-chat-top-title">Anvil <span className="anvil-chat-model">{host?.model||'Local AI'}</span></span>
+        <span className="anvil-chat-private"><span/> LOCAL NETWORK</span>
+      </header>
+      {offline||!host?<div className="anvil-chat-offline"><WifiOff size={28}/><h2>{offline?'Server offline':'Connecting…'}</h2><p>Start the Anvil LAN server on your Windows PC and refresh this page.</p><button onClick={()=>void refresh()}>Retry</button></div>:
+      !authenticated?<div className="anvil-chat-login">
+        <div className="anvil-chat-login-icon"><LockKeyhole size={26}/></div>
+        <h1>Connect to Anvil</h1><p>Enter the access code shown in the Anvil desktop app. Your PC owner can disable this requirement in Settings.</p>
+        <form onSubmit={login}><label htmlFor="anvil-code">Access code</label><input id="anvil-code" autoComplete="one-time-code" value={code} onChange={e=>setCode(e.target.value)} placeholder="Enter access code" required/><button type="submit" disabled={loginBusy}>{loginBusy?'Checking…':'Connect'}</button></form>
+        {error&&<p className="anvil-chat-error" role="alert">{error}</p>}
+      </div>:
+      <>
+        <div className="anvil-chat-scroll" ref={scroller} onScroll={e=>{const node=e.currentTarget;pinned.current=node.scrollHeight-node.scrollTop-node.clientHeight<135}} aria-label="Messages">
+          {messages.length===0?<div className="anvil-chat-welcome"><span className="anvil-chat-welcome-mark"><Flame size={27}/></span><h1>Where should we start?</h1><p>Ask anything. Powered by {host.model||'your local AI'}.</p></div>:
+          <div className="anvil-chat-thread">
+            {messages.map((m,i)=><article className={`anvil-chat-message ${m.role}`} key={i}>
+              {m.role==='assistant'&&<div className="anvil-chat-assistant-icon"><Flame size={16}/></div>}
+              <div className="anvil-chat-message-content">
+                {m.role==='assistant'&&<span className="anvil-chat-label">Anvil</span>}
+                {m.content?<ChatText value={m.content}/>:busy&&i===messages.length-1?<span className="anvil-chat-thinking">Thinking…</span>:null}
+                {m.role==='assistant'&&!!m.content&&<button className="anvil-chat-copy" onClick={()=>void copyMessage(m.content,i)} title="Copy response">{copied===i?<Check size={14}/>:<Copy size={14}/>} {copied===i?'Copied':'Copy'}</button>}
+              </div>
+            </article>)}
+          </div>}
+        </div>
+        <div className="anvil-chat-composer-area">
+          <form className="anvil-chat-composer" onSubmit={send}>
+            <textarea ref={textarea} rows={1} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void send()}}} placeholder="Ask Anvil anything…" aria-label="Chat message"/>
+            <div className="anvil-chat-compose-controls"><span>{host.model||'No model'} · <span className="anvil-chat-online">Local Wi-Fi</span></span>
+              <button type={busy?'button':'submit'} disabled={!busy&&!input.trim()} title={busy?'Stop generation':'Send message'} aria-label={busy?'Stop generating':'Send'} onClick={busy?stop:undefined}>{busy?<Square size={16} fill="currentColor"/>:<ArrowUp size={18}/>}</button>
+            </div>
+          </form>
+          {error&&<div className="anvil-chat-error" role="alert"><AlertCircle size={15}/>{error}<button onClick={()=>setError('')}>Dismiss</button></div>}
+          <p className="anvil-chat-disclaimer">Conversations are saved in this browser. Models can make mistakes. Shift + Enter for a new line.</p>
+        </div>
+      </>}
+    </main>
+    {sidebar&&<button className="anvil-chat-mobile-shade" aria-label="Close menu" onClick={()=>setSidebar(false)}/>}
   </div>;
 }
