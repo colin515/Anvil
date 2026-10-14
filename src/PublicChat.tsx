@@ -1,7 +1,19 @@
 import {useCallback,useEffect,useRef,useState,type FormEvent} from 'react';
-import {ArrowUp,Check,Copy,Menu,MessageSquare,Plus,Square,Trash2,Pencil,WifiOff,LockKeyhole,PanelLeftClose,PanelLeftOpen,Flame,AlertCircle,BrainCircuit} from 'lucide-react';
+import {ArrowUp,Check,Copy,Menu,MessageSquare,Plus,Square,Trash2,Pencil,WifiOff,LockKeyhole,PanelLeftClose,PanelLeftOpen,Flame,AlertCircle,BrainCircuit,Sparkles,SlidersHorizontal} from 'lucide-react';
 
-type Message={role:'user'|'assistant';content:string};
+type CompletionOutcome={confidence:number|null;threshold:number;iterations:number;maxIterations:number;reached:boolean;reason:'threshold_met'|'max_iterations'|'review_unavailable';feedback:string};
+type CompletionProgress={stage:'drafting'|'reviewing'|'assessed';attempt:number;maxIterations:number;confidence:number|null;threshold:number;feedback?:string};
+type CompletionSettings={enabled:boolean;targetConfidence:number;maxIterations:number;timeoutSeconds:number};
+const defaultCompletion:CompletionSettings={enabled:false,targetConfidence:95,maxIterations:4,timeoutSeconds:120};
+function readCompletion():CompletionSettings{
+  try{
+    const saved=JSON.parse(localStorage.getItem('anvil:auto-completion:v1')||'{}');
+    const clamp=(v:unknown,def:number,min:number,max:number)=>typeof v==='number'&&Number.isInteger(v)&&v>=min&&v<=max?v:def;
+    return {enabled:saved.enabled===true,targetConfidence:clamp(saved.targetConfidence,95,50,99),
+      maxIterations:clamp(saved.maxIterations,4,1,6),timeoutSeconds:clamp(saved.timeoutSeconds,120,30,240)};
+  }catch{return {...defaultCompletion};}
+}
+type Message={role:'user'|'assistant';content:string;completion?:CompletionOutcome};
 type Conversation={id:string;title:string;messages:Message[];updated:number};
 type HostInfo={online:boolean;model:string|null;activeRequests:number;maxConcurrent:number;accessEnabled:boolean};
 type ThinkingMode='off'|'low'|'medium'|'high';
@@ -32,6 +44,9 @@ export function PublicChat(){
   const [thinking,setThinking]=useState<ThinkingMode>(()=>{
     try{const mode=localStorage.getItem('anvil:thinking');return mode==='low'||mode==='medium'||mode==='high'?mode:'off'}catch{return 'off'}
   });
+  const [completionSettings,setCompletionSettings]=useState<CompletionSettings>(readCompletion);
+  const [completionSettingsOpen,setCompletionSettingsOpen]=useState(false);
+  const [completionProgress,setCompletionProgress]=useState<CompletionProgress|null>(null);
   const [busy,setBusy]=useState(false);
   const [sidebar,setSidebar]=useState(true);
   const [copied,setCopied]=useState<number|null>(null);
@@ -58,6 +73,7 @@ export function PublicChat(){
   },350);return()=>clearTimeout(t);},[conversations]);
   useEffect(()=>{if(!selected&&conversations.length)setSelected(conversations[0].id)},[]);
   useEffect(()=>{try{localStorage.setItem('anvil:thinking',thinking)}catch{/* Private browsing */}},[thinking]);
+  useEffect(()=>{try{localStorage.setItem('anvil:auto-completion:v1',JSON.stringify(completionSettings))}catch{/* Private browsing */}},[completionSettings]);
   useEffect(()=>{if(pinned.current)scroller.current?.scrollTo({top:scroller.current.scrollHeight,behavior:'instant'})},[messages]);
   useEffect(()=>{if(textarea.current){textarea.current.style.height='auto';textarea.current.style.height=Math.min(240,textarea.current.scrollHeight)+'px'}},[input]);
   useEffect(()=>()=>{controller.current?.abort();cancelAnimationFrame(frame.current)},[]);
@@ -87,7 +103,7 @@ export function PublicChat(){
     setConversations(old=>old.filter(c=>c.id!==id));
     if(id===selected)setSelected(null);
   }
-  function stop(){controller.current?.abort();controller.current=null;setBusy(false);}
+  function stop(){controller.current?.abort();controller.current=null;setBusy(false);setCompletionProgress(null);}
   function flush(){
     cancelAnimationFrame(frame.current);
     frame.current=requestAnimationFrame(()=>{
@@ -115,13 +131,14 @@ export function PublicChat(){
     if(!id)return;
     const outgoing=[...messages,{role:'user' as const,content}];
     const initial=[...outgoing,{role:'assistant' as const,content:''}];
-    setInput('');setBusy(true);setError('');pinned.current=true;
+    setInput('');setBusy(true);setError('');setCompletionProgress(null);pinned.current=true;
     updateChat(id,initial);
     const abort=new AbortController();controller.current=abort;
     let answer='',buffer='',streamError:string|null=null;
+    let outcome:CompletionOutcome|undefined;
     try{
       const r=await fetch('/api/chat',{method:'POST',headers:{'content-type':'application/json'},
-        body:JSON.stringify({messages:outgoing.slice(-72),thinking}),signal:abort.signal});
+        body:JSON.stringify({messages:outgoing.slice(-72),thinking,completion:completionSettings}),signal:abort.signal});
       if(r.status===401){setSession({authenticated:false,accessEnabled:true});throw Error('Access code required');}
       if(!r.ok||!r.body){const d=await r.json().catch(()=>({error:'Could not contact model'}));throw Error(d.error||'Could not contact model');}
       const reader=r.body.getReader(),decoder=new TextDecoder();
@@ -132,9 +149,11 @@ export function PublicChat(){
         for(const chunk of chunks){
           for(const line of chunk.split('\n')){
             if(!line.startsWith('data: '))continue;
-            let payload:{token?:string;error?:string;done?:boolean};
+            let payload:{token?:string;error?:string;done?:boolean;progress?:CompletionProgress;completion?:CompletionOutcome};
             try{payload=JSON.parse(line.slice(6));}catch{continue}
             if(payload.error){streamError=payload.error;break;}
+            if(payload.progress)setCompletionProgress(payload.progress);
+            if(payload.completion)outcome=payload.completion;
             if(payload.token){
               answer+=payload.token;
               pending.current={id,messages:[...outgoing,{role:'assistant',content:answer}]};
@@ -146,14 +165,14 @@ export function PublicChat(){
         if(streamError)break;
       }
       if(streamError)throw Error(streamError);
-      if(!abort.signal.aborted)updateChat(id,[...outgoing,{role:'assistant',content:answer}]);
+      if(!abort.signal.aborted)updateChat(id,[...outgoing,{role:'assistant',content:answer,...(outcome?{completion:outcome}:{})}]);
     }catch(e){
       const aborting=abort.signal.aborted;
       if(!aborting)setError(e instanceof Error?e.message:'The response could not be completed');
-      updateChat(id,[...outgoing,...(answer?[{role:'assistant' as const,content:answer}]:[])]);
+      updateChat(id,[...outgoing,...(answer?[{role:'assistant' as const,content:answer,...(outcome?{completion:outcome}:{})}]:[])]);
     }finally{
       cancelAnimationFrame(frame.current);frame.current=0;pending.current=null;
-      controller.current=null;setBusy(false);textarea.current?.focus();
+      controller.current=null;setBusy(false);setCompletionProgress(null);textarea.current?.focus();
     }
   }
   async function copyMessage(value:string,index:number){
@@ -204,16 +223,35 @@ export function PublicChat(){
               <div className="anvil-chat-message-content">
                 {m.role==='assistant'&&<span className="anvil-chat-label">Anvil</span>}
                 {m.content?<ChatText value={m.content}/>:busy&&i===messages.length-1?<span className="anvil-chat-thinking">Thinking…</span>:null}
+                {m.role==='assistant'&&m.completion&&<div className={`anvil-completion-outcome ${m.completion.reached?'reached':'partial'}`} role="status">
+                  <Sparkles size={14}/><span>{m.completion.confidence===null?'Self-review unavailable':`Self-rated confidence ${m.completion.confidence}%`} · {m.completion.iterations} {m.completion.iterations===1?'pass':'passes'} · {m.completion.reached?'Target met':m.completion.reason==='max_iterations'?'Attempt limit reached':'Review unavailable'}</span>
+                  <span className="anvil-completion-outcome-note" title={m.completion.feedback}>{m.completion.feedback}</span>
+                </div>}
                 {m.role==='assistant'&&!!m.content&&<button className="anvil-chat-copy" onClick={()=>void copyMessage(m.content,i)} title="Copy response">{copied===i?<Check size={14}/>:<Copy size={14}/>} {copied===i?'Copied':'Copy'}</button>}
               </div>
             </article>)}
           </div>}
         </div>
         <div className="anvil-chat-composer-area">
+          {busy&&completionProgress&&<div className="anvil-completion-progress" role="status" aria-live="polite">
+            <Sparkles size={16}/><span><strong>Auto refine · pass {completionProgress.attempt}/{completionProgress.maxIterations}</strong>
+              {completionProgress.stage==='drafting'?'Drafting an improved answer…':
+                completionProgress.stage==='reviewing'?'Checking completeness and consistency…':
+                completionProgress.confidence===null?'Unable to score this draft':`Self-rated ${completionProgress.confidence}% · target ${completionProgress.threshold}%`}</span>
+          </div>}
           <form className="anvil-chat-composer" onSubmit={send}>
             <textarea ref={textarea} rows={1} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void send()}}} placeholder="Ask Anvil anything…" aria-label="Chat message"/>
             <div className="anvil-chat-compose-controls"><div className="anvil-chat-controls-left">
               <span className="anvil-chat-model-name">{host.model||'No model'} · <span className="anvil-chat-online">Local Wi-Fi</span></span>
+              <label className="anvil-autorefine-toggle" title="Automatically improve the answer in several drafting and review rounds">
+                <input type="checkbox" checked={completionSettings.enabled} disabled={busy}
+                  onChange={e=>setCompletionSettings(v=>({...v,enabled:e.target.checked}))}/>
+                <Sparkles size={15}/> Auto refine
+              </label>
+              <button className="anvil-autorefine-config" type="button" aria-label="Automatic completion settings"
+                title="Set confidence threshold, attempts and timeout"
+                aria-expanded={completionSettingsOpen}
+                onClick={()=>setCompletionSettingsOpen(v=>!v)}><SlidersHorizontal size={16}/></button>
               <label className="anvil-chat-thinking-select"><BrainCircuit size={16}/><span>Thinking</span>
                 <select value={thinking} onChange={e=>setThinking(e.target.value as ThinkingMode)} aria-label="Thinking effort">
                   <option value="off">Off</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
@@ -223,6 +261,24 @@ export function PublicChat(){
               <button type={busy?'button':'submit'} disabled={!busy&&!input.trim()} title={busy?'Stop generation':'Send message'} aria-label={busy?'Stop generating':'Send'} onClick={busy?stop:undefined}>{busy?<Square size={16} fill="currentColor"/>:<ArrowUp size={18}/>}</button>
             </div>
           </form>
+          {completionSettingsOpen&&<div className="anvil-autorefine-settings">
+            <div className="anvil-autorefine-settings-header"><strong>Automatic prompt completion</strong><button type="button" onClick={()=>setCompletionSettingsOpen(false)}>Close</button></div>
+            <p>Generates a draft, asks your local model to assess completeness and consistency, and revises it until the target score or attempt limit. Scores are subjective self-assessments, not verified probabilities.</p>
+            <div className="anvil-autorefine-settings-grid">
+              <label>Target self-rated confidence <strong>{completionSettings.targetConfidence}%</strong>
+                <input aria-label="Target confidence" type="range" min="50" max="99" step="1" value={completionSettings.targetConfidence}
+                onChange={e=>setCompletionSettings(v=>({...v,targetConfidence:Number(e.target.value)}))}/></label>
+              <label>Maximum attempts <strong>{completionSettings.maxIterations}</strong>
+                <input aria-label="Maximum attempts" type="range" min="1" max="6" value={completionSettings.maxIterations}
+                onChange={e=>setCompletionSettings(v=>({...v,maxIterations:Number(e.target.value)}))}/></label>
+              <label>Timeout per model call
+                <select aria-label="Timeout per model call" value={completionSettings.timeoutSeconds}
+                onChange={e=>setCompletionSettings(v=>({...v,timeoutSeconds:Number(e.target.value)}))}>
+                  <option value={30}>30 seconds</option><option value={60}>60 seconds</option><option value={120}>2 minutes</option><option value={240}>4 minutes</option>
+                </select></label>
+            </div>
+            <small>Each attempt uses one generation plus one separate self-review. On slow hardware, several attempts can take minutes. Stop Generation cancels the loop.</small>
+          </div>}
           {error&&<div className="anvil-chat-error" role="alert"><AlertCircle size={15}/>{error}<button onClick={()=>setError('')}>Dismiss</button></div>}
           <p className="anvil-chat-disclaimer">Chats stay in this browser. Thinking levels depend on the selected AI model. Shift + Enter adds a line.</p>
         </div>
