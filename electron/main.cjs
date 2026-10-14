@@ -143,7 +143,7 @@ function register() {
   ipcMain.handle('model:unload',async()=>{await host.stop();return unloadModel();});
   ipcMain.handle('app:shutdown',shutdownAnvil);
   ipcMain.handle('local:open',async()=>{if(!host.status().online)throw new Error('Start the local server first.');return shell.openExternal(host.status().localUrl);});
-  ipcMain.handle('local:copy',()=>{const link=host.status().lanUrls[0]?.url || host.status().localUrl || 'http://127.0.0.1:3000';clipboard.writeText(link);return link;});
+  ipcMain.handle('local:copy',(_e,requested)=>{const st=host.status();const allowed=[st.localUrl,...st.lanUrls.map(x=>x.url)].filter(Boolean);const link=typeof requested==='string'&&allowed.includes(requested)?requested:st.lanUrls[0]?.url||st.localUrl||'http://127.0.0.1:3000';clipboard.writeText(link);return link;});
   ipcMain.handle('host:stop',()=>host.stop());
   ipcMain.handle('host:status',()=>host.status());
   ipcMain.handle('app:state',async()=>({hardware,activeModel,host:host.status(),ollama:await ollamaStatus(),access:host.accessSettings()}));
