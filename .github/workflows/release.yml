@@ -51,11 +51,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v0.5.0-auto"
+          $tag = "v0.6.0-studio"
           $file = "release/Anvil-Setup.exe"
           gh release view $tag --repo "${{ github.repository }}" *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $file --clobber --repo "${{ github.repository }}"
           } else {
-            gh release create $tag $file --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "Anvil v0.5.0 — Automatic Prompt Completion" --notes "Automatic prompt completion with local draft-review-refine cycles, configurable 50-99% self-rated confidence target (95% default), maximum attempts and timeout. Progress, stopping and outcome visible in saved chats. Self-ratings are not fact-verified probabilities. Includes local Wi-Fi hosting, Ollama one-click start and thinking controls. Requires Ollama installed and a downloaded model. Unsigned preview installer."
+            gh release create $tag $file --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "Anvil v0.6.0 — Mobile Wi-Fi Chat and Studio" --notes "Mobile HTTP chat fix for browsers without crypto.randomUUID, improved small-screen composer, streaming fallback and removed unsupported Thinking selector. Studio tab provides local presentation editing, CSV/TSV/JSON visualizations, diagrams, report export, themes, widgets, project search and metadata-only plugins. Data saved per browser and is not cloud-synced. Full cloud accounts, real-time collaboration and external connectors are not yet implemented. Requires Ollama and an installed local model. Unsigned Windows preview installer."
           }
