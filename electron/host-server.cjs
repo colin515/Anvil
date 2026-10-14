@@ -77,6 +77,16 @@ class HostServer {
   }
 
   async handle(req, res) {
+    // Reject DNS rebinding and cross-origin browser requests to the local AI.
+    const hostName = (req.headers.host || '').toLowerCase();
+    const ownHost = new Set(['127.0.0.1:'+this.port, 'localhost:'+this.port]);
+    if (!ownHost.has(hostName)) return json(res, 403, {error:'Local host only'});
+    if (req.method === 'POST') {
+      const origin = req.headers.origin;
+      if (origin && !ownHost.has((()=>{try{return new URL(origin).host.toLowerCase()}catch{return ''}})()))
+        return json(res, 403, {error:'Requests must originate from the local chat'});
+      if (req.headers['sec-fetch-site'] === 'cross-site') return json(res, 403, {error:'Cross-site requests blocked'});
+    }
     res.setHeader('x-content-type-options', 'nosniff');
     res.setHeader('referrer-policy', 'no-referrer');
     res.setHeader('x-frame-options', 'DENY');
