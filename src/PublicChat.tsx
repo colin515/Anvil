@@ -1,5 +1,5 @@
 import {useCallback,useEffect,useRef,useState,type FormEvent} from 'react';
-import {ArrowUp,Check,Copy,Menu,MessageSquare,Plus,Square,Trash2,Pencil,WifiOff,LockKeyhole,PanelLeftClose,PanelLeftOpen,Flame,AlertCircle,BrainCircuit,Sparkles,SlidersHorizontal} from 'lucide-react';
+import {ArrowUp,Check,Copy,Menu,MessageSquare,Plus,Square,Trash2,Pencil,WifiOff,LockKeyhole,PanelLeftClose,PanelLeftOpen,Flame,AlertCircle,Sparkles,SlidersHorizontal} from 'lucide-react';
 
 type CompletionOutcome={confidence:number|null;threshold:number;iterations:number;maxIterations:number;reached:boolean;reason:'threshold_met'|'max_iterations'|'review_unavailable';feedback:string};
 type CompletionProgress={stage:'drafting'|'reviewing'|'assessed';attempt:number;maxIterations:number;confidence:number|null;threshold:number;feedback?:string};
@@ -16,10 +16,16 @@ function readCompletion():CompletionSettings{
 type Message={role:'user'|'assistant';content:string;completion?:CompletionOutcome};
 type Conversation={id:string;title:string;messages:Message[];updated:number};
 type HostInfo={online:boolean;model:string|null;activeRequests:number;maxConcurrent:number;accessEnabled:boolean};
-type ThinkingMode='off'|'low'|'medium'|'high';
 type Session={authenticated:boolean;accessEnabled:boolean};
 const STORE='anvil:conversations:v2';
-const createChat=():Conversation=>({id:crypto.randomUUID(),title:'New conversation',messages:[],updated:Date.now()});
+// crypto.randomUUID is unavailable on plain HTTP LAN pages in many mobile browsers.
+ // Chat IDs are local UI identifiers, not authentication tokens.
+export function localChatId():string {
+  try {if(typeof crypto!=='undefined'&&typeof crypto.randomUUID==='function')return crypto.randomUUID();}
+  catch {/* Insecure origin or restricted browser */}
+  return 'chat-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,12);
+}
+const createChat=():Conversation=>({id:localChatId(),title:'New conversation',messages:[],updated:Date.now()});
 function readSaved():Conversation[]{
   try{
     const value=JSON.parse(localStorage.getItem(STORE)||'[]');
@@ -41,14 +47,11 @@ export function PublicChat(){
   const [conversations,setConversations]=useState<Conversation[]>(readSaved);
   const [selected,setSelected]=useState<string|null>(null);
   const [input,setInput]=useState('');
-  const [thinking,setThinking]=useState<ThinkingMode>(()=>{
-    try{const mode=localStorage.getItem('anvil:thinking');return mode==='low'||mode==='medium'||mode==='high'?mode:'off'}catch{return 'off'}
-  });
   const [completionSettings,setCompletionSettings]=useState<CompletionSettings>(readCompletion);
   const [completionSettingsOpen,setCompletionSettingsOpen]=useState(false);
   const [completionProgress,setCompletionProgress]=useState<CompletionProgress|null>(null);
   const [busy,setBusy]=useState(false);
-  const [sidebar,setSidebar]=useState(true);
+  const [sidebar,setSidebar]=useState(()=>typeof window!=='undefined'&&window.innerWidth>=750);
   const [copied,setCopied]=useState<number|null>(null);
   const scroller=useRef<HTMLDivElement>(null);
   const pinned=useRef(true);
@@ -72,7 +75,6 @@ export function PublicChat(){
     catch{setError('Browser storage is full. Export important messages or delete old conversations.');}
   },350);return()=>clearTimeout(t);},[conversations]);
   useEffect(()=>{if(!selected&&conversations.length)setSelected(conversations[0].id)},[]);
-  useEffect(()=>{try{localStorage.setItem('anvil:thinking',thinking)}catch{/* Private browsing */}},[thinking]);
   useEffect(()=>{try{localStorage.setItem('anvil:auto-completion:v1',JSON.stringify(completionSettings))}catch{/* Private browsing */}},[completionSettings]);
   useEffect(()=>{if(pinned.current)scroller.current?.scrollTo({top:scroller.current.scrollHeight,behavior:'instant'})},[messages]);
   useEffect(()=>{if(textarea.current){textarea.current.style.height='auto';textarea.current.style.height=Math.min(240,textarea.current.scrollHeight)+'px'}},[input]);
@@ -128,7 +130,7 @@ export function PublicChat(){
     let id=selected;
     const newConversation=!id?createChat():null;
     if(newConversation){id=newConversation.id;setSelected(id);setConversations(old=>[newConversation,...old]);}
-    if(!id)return;
+    if(!id){setError('Could not create conversation. Please retry.');return;}
     const outgoing=[...messages,{role:'user' as const,content}];
     const initial=[...outgoing,{role:'assistant' as const,content:''}];
     setInput('');setBusy(true);setError('');setCompletionProgress(null);pinned.current=true;
@@ -138,7 +140,7 @@ export function PublicChat(){
     let outcome:CompletionOutcome|undefined;
     try{
       const r=await fetch('/api/chat',{method:'POST',headers:{'content-type':'application/json'},
-        body:JSON.stringify({messages:outgoing.slice(-72),thinking,completion:completionSettings}),signal:abort.signal});
+        body:JSON.stringify({messages:outgoing.slice(-72),completion:completionSettings}),signal:abort.signal});
       if(r.status===401){setSession({authenticated:false,accessEnabled:true});throw Error('Access code required');}
       if(!r.ok||!r.body){const d=await r.json().catch(()=>({error:'Could not contact model'}));throw Error(d.error||'Could not contact model');}
       const reader=r.body.getReader(),decoder=new TextDecoder();
@@ -252,11 +254,7 @@ export function PublicChat(){
                 title="Set confidence threshold, attempts and timeout"
                 aria-expanded={completionSettingsOpen}
                 onClick={()=>setCompletionSettingsOpen(v=>!v)}><SlidersHorizontal size={16}/></button>
-              <label className="anvil-chat-thinking-select"><BrainCircuit size={16}/><span>Thinking</span>
-                <select value={thinking} onChange={e=>setThinking(e.target.value as ThinkingMode)} aria-label="Thinking effort">
-                  <option value="off">Off</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
-                </select>
-              </label>
+
               </div>
               <button type={busy?'button':'submit'} disabled={!busy&&!input.trim()} title={busy?'Stop generation':'Send message'} aria-label={busy?'Stop generating':'Send'} onClick={busy?stop:undefined}>{busy?<Square size={16} fill="currentColor"/>:<ArrowUp size={18}/>}</button>
             </div>
@@ -280,7 +278,7 @@ export function PublicChat(){
             <small>Each attempt uses one generation plus one separate self-review. On slow hardware, several attempts can take minutes. Stop Generation cancels the loop.</small>
           </div>}
           {error&&<div className="anvil-chat-error" role="alert"><AlertCircle size={15}/>{error}<button onClick={()=>setError('')}>Dismiss</button></div>}
-          <p className="anvil-chat-disclaimer">Chats stay in this browser. Thinking levels depend on the selected AI model. Shift + Enter adds a line.</p>
+          <p className="anvil-chat-disclaimer">Chats stay in this browser. Your AI runs on your own PC. Shift + Enter adds a line.</p>
         </div>
       </>}
     </main>
