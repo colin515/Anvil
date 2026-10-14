@@ -168,3 +168,102 @@
 @media(max-width:960px){.sidebar{width:190px;min-width:190px}.app-content{padding:24px 22px 36px}.overview-stats{grid-template-columns:1fr}.model-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){.public-header{padding:0 16px}.overview-grid,.overview-stats{grid-template-columns:1fr}.local-address code{font-size:14px}.local-actions{align-items:stretch}.local-actions .button{flex:1}}
 @media(prefers-reduced-motion:reduce){.model-card:hover{transform:none}}
+
+
+/* Chat v0.3 — restrained graphite, centered Gemini-style composer, responsive history rail */
+.anvil-chat-app{--chat-bg:#131314;--chat-rail:#1b1b1e;--chat-ink:#eeeef0;--chat-muted:#a7a7ad;--chat-border:rgba(255,255,255,.08);--chat-accent:#8eabff;display:flex;min-height:100vh;height:100dvh;background:var(--chat-bg);color:var(--chat-ink);font-family:"Segoe UI Variable",Inter,system-ui,-apple-system,sans-serif;overflow:hidden}
+.anvil-chat-app *{box-sizing:border-box}
+.anvil-chat-app button{border:0;cursor:pointer;color:inherit}
+.anvil-chat-app button:focus-visible,.anvil-chat-app textarea:focus-visible,.anvil-chat-app input:focus-visible{outline:2px solid #9cafff;outline-offset:3px}
+.anvil-chat-sidebar{height:100%;flex:0 0 254px;background:var(--chat-rail);display:flex;flex-direction:column;min-width:0;transition:flex-basis 160ms ease;border-right:1px solid rgba(255,255,255,.035)}
+.anvil-chat-sidebar.collapsed{flex-basis:64px}
+.anvil-chat-side-top{display:flex;align-items:center;gap:17px;min-height:70px;padding:0 15px}
+.anvil-chat-rail-button{width:35px;height:35px;display:grid;place-items:center;border-radius:10px;background:transparent;color:var(--chat-muted)!important;flex:none}
+.anvil-chat-rail-button:hover{background:#303034;color:#fff!important}
+.anvil-chat-wordmark{display:flex;gap:8px;align-items:center;font-weight:690;letter-spacing:-.03em;font-size:19px;white-space:nowrap}
+.anvil-chat-wordmark svg,.anvil-chat-welcome-mark svg,.anvil-chat-assistant-icon svg{color:#93aaff}
+.anvil-chat-new{display:flex;gap:12px;align-items:center;justify-content:flex-start;background:#303033;margin:10px 12px 24px;height:44px;min-height:44px;border-radius:13px;padding:0 14px;font-size:13px;font-weight:600;white-space:nowrap}
+.anvil-chat-new:hover{background:#3b3b40}
+.anvil-chat-sidebar.collapsed .anvil-chat-new{width:42px;justify-content:center;padding:0;margin:10px 11px 24px}
+.anvil-chat-history-label{padding:0 22px;color:#96969e;font-size:10px;font-weight:750;letter-spacing:.14em;margin:6px 0 14px}
+.anvil-chat-history{flex:1;min-height:0;overflow-y:auto;padding:0 9px 14px;scrollbar-width:thin}
+.anvil-chat-history-row{display:flex;align-items:center;min-height:43px;border-radius:10px;gap:2px;margin:2px 0}
+.anvil-chat-history-row:hover{background:#303034}
+.anvil-chat-history-row.selected{background:#353541}
+.anvil-chat-history-row button{background:transparent;display:grid;place-items:center;color:#aaaab1;padding:7px;border-radius:7px;flex:none}
+.anvil-chat-history-row button:hover{color:white;background:#414149}
+.anvil-chat-history-row .anvil-chat-history-select{display:flex;text-align:left;align-items:center;gap:10px;min-width:0;flex:1;padding:10px 9px;color:#d4d4d8;font-size:12px}
+.anvil-chat-history-select span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.anvil-chat-nohistory{font-size:12px;line-height:1.6;color:#888891;padding:6px 14px}
+.anvil-chat-side-bottom{height:65px;border-top:1px solid var(--chat-border);padding:22px;display:flex;align-items:center;gap:9px;font-size:11px;color:#a7a7ad;white-space:nowrap}
+.anvil-chat-sidebar.collapsed .anvil-chat-side-bottom{justify-content:center;padding:10px}
+.anvil-chat-status-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#4ecb89;box-shadow:0 0 0 3px rgba(78,203,137,.1);flex:none}
+.anvil-chat-content{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;position:relative}
+.anvil-chat-topbar{flex:none;display:flex;align-items:center;justify-content:space-between;min-height:65px;padding:0 30px;gap:15px}
+.anvil-chat-top-title{font-size:17px;letter-spacing:-.035em;font-weight:640;display:flex;align-items:center;gap:10px}
+.anvil-chat-model{font-size:12px;color:#b0b0b7;font-weight:480;letter-spacing:0}
+.anvil-chat-private{font-size:10px;font-weight:680;color:#a3a3aa;letter-spacing:.09em;display:flex;align-items:center;gap:8px;white-space:nowrap}
+.anvil-chat-private>span{height:7px;width:7px;border-radius:50%;background:#48cd84}
+.anvil-chat-scroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;overscroll-behavior:contain}
+.anvil-chat-welcome{width:min(780px,90%);margin:0 auto;min-height:100%;display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;padding-bottom:25px}
+.anvil-chat-welcome-mark{width:43px;height:43px;border-radius:16px;background:#282837;display:grid;place-items:center;margin-bottom:24px}
+.anvil-chat-welcome h1{font-weight:550;letter-spacing:-.04em;font-size:clamp(26px,3vw,34px);margin:0 0 10px}
+.anvil-chat-welcome p{font-size:13px;color:#888891;margin:0}
+.anvil-chat-thread{width:min(820px,calc(100% - 48px));margin:25px auto 45px;display:flex;flex-direction:column;gap:33px;padding-bottom:30px}
+.anvil-chat-message{display:flex;gap:13px;align-items:flex-start;max-width:100%}
+.anvil-chat-message.user{justify-content:flex-end}
+.anvil-chat-message.user .anvil-chat-message-content{background:#2b2b30;border-radius:18px 18px 6px 18px;padding:13px 18px;max-width:min(85%,710px);font-size:14px}
+.anvil-chat-message.assistant .anvil-chat-message-content{width:100%;padding:2px 0 0;min-width:0}
+.anvil-chat-assistant-icon{display:grid;place-items:center;height:30px;width:30px;border-radius:10px;background:#252535;flex:none}
+.anvil-chat-label{color:#c6c6cc;font-size:12px;font-weight:660;display:block;margin-bottom:12px}
+.anvil-answer{font-size:14px;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere;color:#e3e3e7}
+.anvil-answer pre{white-space:pre;overflow-x:auto;background:#24242b;border:1px solid #37373d;color:#d7e5ff;border-radius:12px;font:12px/1.65 "Cascadia Code",Consolas,monospace;padding:14px}
+.anvil-chat-thinking{font-size:13px;color:#a5a5af;animation:anvil-think 1.8s ease-in-out infinite}
+@keyframes anvil-think{50%{opacity:.5}}
+.anvil-chat-copy{background:transparent!important;color:#9c9ca4!important;display:inline-flex;align-items:center;gap:7px;font-size:11px;margin-top:13px;padding:6px 7px;border-radius:7px}
+.anvil-chat-copy:hover{background:#28282f!important;color:white!important}
+.anvil-chat-composer-area{width:min(830px,calc(100% - 44px));margin:0 auto;padding:0 0 max(17px,env(safe-area-inset-bottom));flex:none;position:relative}
+.anvil-chat-composer{background:#27272a;border:1px solid #38383d;border-radius:24px;box-shadow:0 8px 30px rgba(0,0,0,.13);padding:15px 17px 10px;display:flex;flex-direction:column;gap:7px}
+.anvil-chat-composer:focus-within{border-color:#585863}
+.anvil-chat-composer textarea{border:0;outline:0!important;resize:none;background:transparent;color:#eeeef0;width:100%;min-height:35px;max-height:240px;padding:7px 5px 0;font:14px/1.55 inherit;overflow-y:auto}
+.anvil-chat-composer textarea::placeholder{color:#a5a5ad}
+.anvil-chat-compose-controls{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-top:2px}
+.anvil-chat-compose-controls>span{font-size:11px;color:#a8a8b0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.anvil-chat-online{color:#78cfa4}
+.anvil-chat-compose-controls button{display:grid;place-items:center;width:34px;height:34px;background:#e5e5ee;color:#16161a;border-radius:50%;flex:none}
+.anvil-chat-compose-controls button:hover:not(:disabled){background:#fff}
+.anvil-chat-compose-controls button:disabled{opacity:.35;cursor:not-allowed}
+.anvil-chat-disclaimer{font-size:10px;color:#8d8d94;text-align:center;margin:9px 0 0;line-height:1.5}
+.anvil-chat-error{display:flex;align-items:center;gap:8px;color:#ff9b95;background:rgba(255,69,58,.09);font-size:12px;border-radius:10px;padding:11px 12px;margin:10px 0}
+.anvil-chat-error button{margin-left:auto;font-size:11px;background:none;color:#fbb5b1}
+.anvil-chat-login,.anvil-chat-offline{max-width:460px;min-width:0;width:calc(100% - 44px);margin:auto;text-align:center}
+.anvil-chat-login-icon{width:55px;height:55px;display:grid;place-items:center;background:#282837;border-radius:16px;margin:0 auto 17px;color:#a6b8ff}
+.anvil-chat-login h1,.anvil-chat-offline h2{font-size:29px;font-weight:570;letter-spacing:-.04em;margin:0 0 10px}
+.anvil-chat-login p,.anvil-chat-offline p{font-size:13px;line-height:1.7;color:#ababaf}
+.anvil-chat-login form{display:flex;flex-direction:column;text-align:left;gap:10px;margin-top:29px}
+.anvil-chat-login label{font-size:12px;color:#b6b6bd}
+.anvil-chat-login input{border:1px solid #44444a;background:#29292d;color:white;padding:13px 14px;border-radius:10px;font-size:15px}
+.anvil-chat-login form button,.anvil-chat-offline button{background:#7d91e7;color:#121217;padding:13px 15px;border-radius:10px;font-size:13px;font-weight:650}
+.anvil-chat-offline svg{color:#8e96ad;margin-bottom:18px}
+.anvil-chat-mobile-menu,.anvil-chat-mobile-shade{display:none}
+@media(max-width:900px){
+  .anvil-chat-sidebar.expanded{flex-basis:220px}
+  .anvil-chat-sidebar.collapsed{flex-basis:58px}
+  .anvil-chat-thread{width:calc(100% - 36px)}
+  .anvil-chat-composer-area{width:calc(100% - 28px)}
+}
+@media(max-width:750px){
+  .anvil-chat-sidebar{position:absolute;z-index:50;left:0;top:0;bottom:0;width:270px;flex:none!important;transform:translateX(-100%);transition:transform .16s ease}
+  .anvil-chat-sidebar.expanded{transform:translateX(0)}
+  .anvil-chat-mobile-menu{display:grid;place-items:center;background:none;padding:7px;margin-left:-7px}
+  .anvil-chat-mobile-shade{position:absolute;inset:0;background:rgba(0,0,0,.44);z-index:40;display:block}
+  .anvil-chat-topbar{padding:0 18px;min-height:58px}
+  .anvil-chat-top-title{margin-right:auto}
+  .anvil-chat-private{font-size:9px}
+  .anvil-chat-welcome h1{font-size:27px}
+  .anvil-chat-composer-area{padding-bottom:max(10px,env(safe-area-inset-bottom))}
+  .anvil-chat-message.user .anvil-chat-message-content{max-width:90%}
+}
+@media(prefers-reduced-motion:reduce){
+  .anvil-chat-sidebar,.anvil-chat-thinking{animation:none;transition:none}
+}
