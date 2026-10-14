@@ -170,7 +170,7 @@ class HostServer{
         if(data.completion?.enabled===true){
           const settings=normalizeCompletion(data.completion);
           res.writeHead(200,{'content-type':'text/event-stream; charset=utf-8','cache-control':'no-cache, no-transform','connection':'keep-alive','x-accel-buffering':'no'});
-          const event=payload=>{if(!res.writableEnded&&!controller.signal.aborted)res.write('data: '+JSON.stringify(payload)+'\\n\\n');};
+          const event=payload=>{if(!res.writableEnded&&!controller.signal.aborted)res.write('data: '+JSON.stringify(payload)+'\n\n');};
           const result=await runAutoCompletion({
             ollamaUrl:this.ollamaUrl,model,messages,settings,think,
             signal:controller.signal,
@@ -179,7 +179,7 @@ class HostServer{
           event({completion:{confidence:result.confidence,threshold:result.threshold,iterations:result.iterations,
             maxIterations:result.maxIterations,reached:result.reached,reason:result.reason,feedback:result.feedback}});
           event({token:result.answer});
-          if(!res.writableEnded)res.end('data: {"done":true}\\n\\n');
+          if(!res.writableEnded)res.end('data: {"done":true}\n\n');
           return;
         }
         const response=await fetch(`${this.ollamaUrl}/api/chat`,{
