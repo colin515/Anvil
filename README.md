@@ -1,87 +1,50 @@
 # Anvil — Your hardware. Your intelligence.
 
-**Website:** [https://colin515.github.io/Anvil/](https://colin515.github.io/Anvil/) · **Windows download:** [Latest release](https://github.com/colin515/Anvil/releases/latest) · [Releases](https://github.com/colin515/Anvil/releases)
+**Product website (activate GitHub Pages):** https://colin515.github.io/Anvil/  ·  **Windows installer:** [Download latest release](https://github.com/colin515/Anvil/releases/latest)
 
-> **Website activation required:** The product website is already included in `docs/`, but GitHub Pages must first be enabled in **Repository Settings → Pages → Build and deployment → Source → GitHub Actions**. Then run **Actions → Publish Anvil website → Run workflow**. Until GitHub Pages is enabled, the website link above will not load.
+> **Website status:** GitHub Pages requires a one-time activation from the repository owner. Go to [Settings → Pages](https://github.com/colin515/Anvil/settings/pages), select **GitHub Actions**, then run the [Publish Anvil website](https://github.com/colin515/Anvil/actions/workflows/pages.yml) workflow. The product website is separate from the local chat.
 
-Anvil is a clean **Windows local-AI desktop app**, built around a minimal, Flowforge-inspired interface. It scans your PC, recommends Ollama models, and runs a **localhost-only** browser chat. No tunnels, public hosting, invite codes, or accounts.
+## Anvil v0.3 — Private Wi-Fi hosting
 
-> **Local chat:** [http://127.0.0.1:3000](http://127.0.0.1:3000) — accessible **only on your own PC while the Anvil server is running**. The new local-only behaviour is included in v0.2.0-local and later. Older releases used a randomly assigned port.
+Anvil runs local AI on your Windows PC using Ollama and serves a clean browser chat to devices on the **same private Wi-Fi / LAN**. It does **not** create an internet-exposed server or tunnel.
 
-> **Requirements:** Windows 10/11 (64-bit), [Ollama for Windows](https://ollama.com/download/windows) running locally. Node.js 22 is required only when building from source. The unsigned preview installer is for local testing.
+- **Wi-Fi chat link:** Anvil displays the actual address on your machine, such as `http://192.168.1.20:3000`. That IP is an **example only**; your address may differ.
+- **Same-PC link:** `http://127.0.0.1:3000` after pressing **Start Wi-Fi server** in Anvil.
+- **Optional access code:** on by default, visible in the desktop app. Turn it off in Settings or Wi-Fi host if all LAN users are trusted; you will receive a warning before disabling it.
+- **Unlimited conversation count / no chat quota:** no imposed per-hour chat count, and no 512-token output cap. Safety-size checks remain (1 MB HTTP body, 120k characters per message, up to 72 messages per model request), and a maximum of two *simultaneous* inference requests prevents resource exhaustion. The model's own context window still limits how much it can retain.
+- **Saved chat history:** create, rename and delete chats. Conversations are saved **per browser/device** in local browser storage (not synchronized between devices); clearing site data erases them.
+- **GPU usage:** live measured GPU-wide percentage on supported NVIDIA GPUs, Windows GPU-engine estimate as a fallback; this is **not** a precise AI-only utilization counter. Unsupported drivers display unavailable.
+- **Stop AI / Shutdown:** Stop AI closes the chat server and asks Ollama to unload the active model from RAM/VRAM. Shut down Anvil also quits the desktop program; it does not kill an independently running Ollama service.
+- The downloadable Windows installer is unsigned and meant for preview/personal testing.
 
-## Product
+## Setup
 
-- Flowforge-style graphite UI with bright blue accents, compact sidebar and quiet, functional motion.
-- Dashboard with one-click **Start local server**, **Open Chat** and **Copy link** actions.
-- Stable chat address `http://127.0.0.1:3000`, bound to `127.0.0.1` (not accessible over the LAN or internet).
-- Hardware diagnostics and model fit recommendations with real Ollama downloads.
-- Interactive, token-streamed browser chat from your PC; no invite code needed on loopback.
-- Model library, selected model, download progress, and optional benchmark.
+1. Install [Ollama for Windows](https://ollama.com/download/windows), then install the latest Anvil Windows release.
+2. Download and select a model under **My models** in the Anvil desktop app.
+3. On **Overview** or **Wi-Fi host**, click **Start Wi-Fi server**.
+4. Copy the Wi-Fi address shown by Anvil and open it from any device connected to the same private Wi-Fi. If access-code protection is enabled, enter the code shown in the Windows app.
+5. If other devices cannot connect, ensure your network is set to **Private** in Windows and allow Anvil's inbound TCP port 3000 on the **Private** firewall profile (not Public). Avoid guest Wi-Fi with client isolation. You can use an elevated PowerShell terminal to create a narrowly scoped rule:
+   ```powershell
+   New-NetFirewallRule -DisplayName "Anvil Wi-Fi AI" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 3000 -Profile Private
+   ```
+   Only run this on a trusted private network. Don't configure router port-forwarding.
+6. When finished, press **Stop hosting**, **Stop AI and unload model**, or **Shut down Anvil**.
+
+**Security:** Local Wi-Fi HTTP traffic is not encrypted by TLS. Use only on trusted LANs. Anyone sharing your private network could potentially observe unencrypted traffic; keep access codes enabled where appropriate. Do not forward TCP port 3000 to the public internet.
 
 ## Development
 
 ```powershell
-npm install --no-audit --no-fund
-# Terminal 1 — Vite (the desktop is an Electron window)
-npm run dev
-# Terminal 2 — Electron
-npm run desktop:dev
-```
-
-Or build and run the packaged interface locally:
-
-```powershell
+npm ci
 npm run check
 npm run build
 npm run desktop
-```
-
-Run the Windows installer packaging step:
-
-```powershell
+# Or to create the Windows installer:
 npm run package:win
 ```
 
-Output: `release/Anvil-Setup.exe`. **Do not distribute an installer that has not been built, scanned and tested on a Windows PC.** Unsigned installers may trigger SmartScreen warnings.
-
-## How local hosting works
-
-1. Start Ollama and download an AI model in Anvil, then choose it as the active model.
-2. In **Overview** or **Local server**, click **Start local server**.
-3. Open **http://127.0.0.1:3000** on this PC, or use **Open Chat** in Anvil. Use **Copy link** to copy the address.
-4. Chat with your model directly. No internet sharing or visitor authentication is configured.
-5. Click **Go offline** to stop serving the chat.
-
-Anvil binds to `127.0.0.1`, not `0.0.0.0`. Other computers and phones cannot access that address on your PC. If port 3000 is occupied, Anvil reports an error instead of silently selecting a different port.
-
-The **GitHub Pages** site is only a public product information and installer-download website. It does *not* host a live AI chat; local AI inference always runs on your computer.
-
-## Publishing to GitHub
-
-Repository: **https://github.com/colin515/Anvil**. The project uses GitHub Actions to verify source, build a Windows installer, and deploy a separate product/download website.
-
-1. Push this project's contents to the `main` branch.
-2. In **Settings → Pages**, choose **GitHub Actions** as the source. **This initial activation must be made by the repository owner:** GitHub Actions tokens cannot create a Pages site if repository administration blocks it. Then open **Actions → Publish Anvil website → Run workflow** to deploy `docs/` to `https://colin515.github.io/Anvil/`.
-3. Run `npm install` (Node 22). The workflows install dependencies on the hosted runners.
-4. An updated Windows release is built on GitHub Actions. Source checks must pass before publishing an installer. Download the newest **Anvil-Setup.exe** from the Releases page.
-5. The public website reads GitHub's latest release API. The download button becomes a direct `.exe` link once `Anvil-Setup.exe` is published. Until then it links to the Releases page without claiming an installer exists.
-
-For this repository, the product site URL is `https://colin515.github.io/Anvil/` after GitHub Pages has been enabled.
-
-## Directory map
-
-```text
-src/                  React/TypeScript desktop UI and visitor chat
-electron/main.cjs      Hardened Electron shell and native IPC
-electron/logic.cjs     Deterministic memory-fit estimates
-electron/host-server.cjs  Loopback-only browser chat server
-electron/preload.cjs   Safe renderer IPC bridge
-docs/index.html       Standalone GitHub Pages product site
-.github/workflows/    CI, Pages deployment and Windows release
-tests/                Unit tests for recommendations and local chat
-```
+Node.js 22 is required for building from source (not for installing a packaged release). Website source is in `docs/`; chat and desktop sources are in `src/`, with Electron backend in `electron/`. GitHub Actions builds and tests the Windows installer.
 
 ## License
 
-No license has yet been selected. The repository owner must choose one before distributing or inviting external contributions.
+No open-source license has yet been selected. Choose one before expecting external contributions or redistributing modified versions.
