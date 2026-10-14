@@ -33,6 +33,9 @@ function networkUrls(port){
         addresses.push({interface:name,url:`http://${entry.address}:${port}`,ip:entry.address});
     }
   }
+  // Put actual Wi-Fi adapters before Ethernet and virtual/VPN adapters.
+  const rank=name=>/wi-?fi|wireless|wlan|wlp/i.test(name)?0:/vEthernet|docker|WSL|virtual|vmware|virtualbox|hyper-v|tailscale|vpn|loopback/i.test(name)?3:/ethernet|eth/i.test(name)?1:2;
+  addresses.sort((a,b)=>rank(a.interface)-rank(b.interface)||a.interface.localeCompare(b.interface));
   return addresses;
 }
 async function bodyJson(req){
