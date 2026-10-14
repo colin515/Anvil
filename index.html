@@ -1,2 +1,29 @@
 <!doctype html>
-<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><meta name="theme-color" content="#0B0E13"/><meta name="description" content="Anvil turns your Windows PC into a local AI host."/><title>Anvil — Local intelligence</title></head><body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="theme-color" content="#1C1C1E"/>
+  <meta name="description" content="Anvil — private AI on your Windows PC, available over your own Wi-Fi."/>
+  <title>Anvil — Local intelligence</title>
+  <script>
+    // When GitHub Pages publishes from the repository root, the React/Vite
+    // desktop entry cannot run without bundling. Redirect to the standalone
+    // static website in docs/. This runs ONLY on GitHub Pages, never Electron.
+    if (location.hostname.toLowerCase().endsWith('.github.io')) {
+      const base = location.pathname.replace(/(?:index\.html)?$/, '');
+      location.replace(base + 'docs/' + location.search + location.hash);
+    }
+  </script>
+</head>
+<body style="margin:0;background:#1c1c1e;color:#f5f5f7;font-family:system-ui,sans-serif">
+  <div id="root">
+    <main style="max-width:560px;margin:22vh auto;padding:24px">
+      <h1>Anvil</h1>
+      <p>Loading the Anvil website…</p>
+      <p><a style="color:#7cbdff" href="./docs/">Open the Anvil website</a></p>
+    </main>
+  </div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+</html>
