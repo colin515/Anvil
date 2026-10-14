@@ -142,18 +142,16 @@ export function PublicChat(){
       const r=await fetch('/api/chat',{method:'POST',headers:{'content-type':'application/json'},
         body:JSON.stringify({messages:outgoing.slice(-72),completion:completionSettings}),signal:abort.signal});
       if(r.status===401){setSession({authenticated:false,accessEnabled:true});throw Error('Access code required');}
-      if(!r.ok||!r.body){const d=await r.json().catch(()=>({error:'Could not contact model'}));throw Error(d.error||'Could not contact model');}
-      const reader=r.body.getReader(),decoder=new TextDecoder();
-      while(true){
-        const {done,value}=await reader.read();if(done)break;
-        buffer+=decoder.decode(value,{stream:true});
-        const chunks=buffer.split('\n\n');buffer=chunks.pop()||'';
-        for(const chunk of chunks){
-          for(const line of chunk.split('\n')){
-            if(!line.startsWith('data: '))continue;
+      if(!r.ok){const d=await r.json().catch(()=>({error:'Could not contact model'}));throw Error(d.error||'Could not contact model');}
+      const consume=(chunk:string)=>{
+        buffer+=chunk.replace(/\r\n/g,'\n');
+        const frames=buffer.split('\n\n');buffer=frames.pop()||'';
+        for(const frame of frames){
+          for(const line of frame.split('\n')){
+            if(!line.startsWith('data:'))continue;
             let payload:{token?:string;error?:string;done?:boolean;progress?:CompletionProgress;completion?:CompletionOutcome};
-            try{payload=JSON.parse(line.slice(6));}catch{continue}
-            if(payload.error){streamError=payload.error;break;}
+            try{payload=JSON.parse(line.slice(5).trimStart())}catch{continue}
+            if(payload.error){streamError=payload.error;return}
             if(payload.progress)setCompletionProgress(payload.progress);
             if(payload.completion)outcome=payload.completion;
             if(payload.token){
@@ -162,15 +160,25 @@ export function PublicChat(){
               flush();
             }
           }
+        }
+      };
+      if(!r.body){
+        // Some mobile/webview implementations expose a complete response only.
+        consume((await r.text())+'\n\n');
+      }else{
+        const reader=r.body.getReader(),decoder=new TextDecoder();
+        while(true){
+          const {done,value}=await reader.read();
+          if(done){consume(decoder.decode()+'\n\n');break;}
+          consume(decoder.decode(value,{stream:true}));
           if(streamError)break;
         }
-        if(streamError)break;
       }
       if(streamError)throw Error(streamError);
       if(!abort.signal.aborted)updateChat(id,[...outgoing,{role:'assistant',content:answer,...(outcome?{completion:outcome}:{})}]);
     }catch(e){
       const aborting=abort.signal.aborted;
-      if(!aborting)setError(e instanceof Error?e.message:'The response could not be completed');
+      if(!aborting)setError(e instanceof Error?e.message:'The response could not be completed. Check Ollama and Wi-Fi connectivity.');
       updateChat(id,[...outgoing,...(answer?[{role:'assistant' as const,content:answer,...(outcome?{completion:outcome}:{})}]:[])]);
     }finally{
       cancelAnimationFrame(frame.current);frame.current=0;pending.current=null;
