@@ -1,10 +1,24 @@
-name: Build Windows installer and publish release
+name: Build local-only Anvil for Windows
+
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+    paths:
+      - 'electron/**'
+      - 'src/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/release.yml'
   workflow_dispatch:
+
 permissions:
   contents: write
+
+concurrency:
+  group: anvil-windows-release
+  cancel-in-progress: false
+
 jobs:
   windows:
     runs-on: windows-latest
@@ -15,23 +29,31 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Unit tests and typecheck
         run: npm run check
-      - name: Build Windows installer
+      - name: Package Windows installer
         run: npm run package:win
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      - name: Publish tagged release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: release/Anvil-Setup.exe
-          generate_release_notes: true
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Anvil-Setup
+          name: Anvil-Windows-Setup
           path: release/Anvil-Setup.exe
           if-no-files-found: error
+      - name: Create or update local-only preview release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "v0.2.0-local"
+          $file = "release/Anvil-Setup.exe"
+          gh release view $tag --repo "${{ github.repository }}" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $file --clobber --repo "${{ github.repository }}"
+          } else {
+            gh release create $tag $file --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "Anvil v0.2.0 — Local only" --notes "Flowforge-inspired compact UI, stable local chat URL http://127.0.0.1:3000, no Cloudflare tunnels or invite codes. Requires local Ollama. Windows x64 unsigned installer for personal testing; review SmartScreen warnings before running."
+          }
