@@ -6,6 +6,7 @@ const os=require('node:os');
 const fs=require('node:fs');
 const path=require('node:path');
 const crypto=require('node:crypto');
+const {normalizeCompletion,runAutoCompletion}=require('./auto-complete.cjs');
 
 const MIME={'.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon','.html':'text/html; charset=utf-8','.woff2':'font/woff2'};
 const MAX_BODY=1024*1024; // Guard resource exhaustion, not a chat quota.
@@ -166,6 +167,21 @@ class HostServer{
       const controller=new AbortController();this.controllers.add(controller);
       res.once('close',()=>controller.abort());
       try{
+        if(data.completion?.enabled===true){
+          const settings=normalizeCompletion(data.completion);
+          res.writeHead(200,{'content-type':'text/event-stream; charset=utf-8','cache-control':'no-cache, no-transform','connection':'keep-alive','x-accel-buffering':'no'});
+          const event=payload=>{if(!res.writableEnded&&!controller.signal.aborted)res.write('data: '+JSON.stringify(payload)+'\\n\\n');};
+          const result=await runAutoCompletion({
+            ollamaUrl:this.ollamaUrl,model,messages,settings,think,
+            signal:controller.signal,
+            onProgress:progress=>event({progress})
+          });
+          event({completion:{confidence:result.confidence,threshold:result.threshold,iterations:result.iterations,
+            maxIterations:result.maxIterations,reached:result.reached,reason:result.reason,feedback:result.feedback}});
+          event({token:result.answer});
+          if(!res.writableEnded)res.end('data: {"done":true}\\n\\n');
+          return;
+        }
         const response=await fetch(`${this.ollamaUrl}/api/chat`,{
           method:'POST',headers:{'content-type':'application/json'},signal:controller.signal,
           body:JSON.stringify(payload) // no artificial token output cap
