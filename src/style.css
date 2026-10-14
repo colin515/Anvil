@@ -297,3 +297,21 @@
 .console-grid .config-line strong{overflow-wrap:anywhere}
 @media(max-width:950px){.anvil-code{flex-wrap:wrap}.anvil-shutdown-actions .button{flex:1}}
 @media(prefers-reduced-motion:reduce){.anvil-switch span,.anvil-switch span:before{transition:none}}
+
+/* 0.4 — one-click workspace and graded reasoning controls */
+.start-everything-card{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:19px 23px;margin-bottom:16px;flex-wrap:wrap;border-color:rgba(10,132,255,.21);background:linear-gradient(105deg,rgba(10,132,255,.105),var(--surface) 55%)}
+.start-everything-label{display:flex;align-items:center;gap:13px;min-width:0}
+.start-everything-label>svg{color:#64b5ff;flex:none}
+.start-everything-label strong{display:block;font-size:14px;font-weight:680}
+.start-everything-label p{margin:5px 0 0;font-size:12px;line-height:1.5;color:var(--muted)}
+.start-everything-button{min-width:182px;min-height:44px;flex:none}
+.startup-step{font-size:11px;color:var(--muted);width:100%;margin-top:-5px}
+.anvil-chat-controls-left{display:flex;align-items:center;gap:12px;min-width:0;flex-wrap:wrap}
+.anvil-chat-model-name{font-size:11px;color:#9e9ea7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:300px}
+.anvil-chat-thinking-select{display:flex;align-items:center;gap:5px;padding:5px 9px;background:#34343a;border:1px solid #44444a;border-radius:9px;color:#dedee4;font-size:11px}
+.anvil-chat-thinking-select svg{color:#a6b9ff;flex:none}
+.anvil-chat-thinking-select select{background:transparent;color:inherit;border:0;outline:0;cursor:pointer;font:inherit;font-size:11px;padding:0 4px}
+.anvil-chat-thinking-select option{background:#29292d;color:#fff}
+.anvil-chat-thinking-select:focus-within{outline:2px solid #9cafff;outline-offset:2px}
+@media(max-width:850px){.start-everything-button{width:100%}}
+@media(max-width:600px){.anvil-chat-model-name{max-width:130px}.anvil-chat-thinking-select span{display:none}}
