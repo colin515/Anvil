@@ -172,7 +172,7 @@ class HostServer{
           res.writeHead(200,{'content-type':'text/event-stream; charset=utf-8','cache-control':'no-cache, no-transform','connection':'keep-alive','x-accel-buffering':'no'});
           const event=payload=>{if(!res.writableEnded&&!controller.signal.aborted)res.write('data: '+JSON.stringify(payload)+'\n\n');};
           const result=await runAutoCompletion({
-            ollamaUrl:this.ollamaUrl,model,messages,settings,think,
+            ollamaUrl:this.ollamaUrl,model,messages,settings,think,reviewThink:thinkingParameter(model,'off'),
             signal:controller.signal,
             onProgress:progress=>event({progress})
           });
