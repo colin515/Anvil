@@ -1,9 +1,10 @@
 import {useCallback,useEffect,useRef,useState,type FormEvent} from 'react';
-import {ArrowUp,Check,ChevronLeft,Copy,Menu,MessageSquare,Plus,Square,Trash2,Pencil,WifiOff,LockKeyhole,PanelLeftClose,PanelLeftOpen,Flame,AlertCircle} from 'lucide-react';
+import {ArrowUp,Check,Copy,Menu,MessageSquare,Plus,Square,Trash2,Pencil,WifiOff,LockKeyhole,PanelLeftClose,PanelLeftOpen,Flame,AlertCircle,BrainCircuit} from 'lucide-react';
 
 type Message={role:'user'|'assistant';content:string};
 type Conversation={id:string;title:string;messages:Message[];updated:number};
 type HostInfo={online:boolean;model:string|null;activeRequests:number;maxConcurrent:number;accessEnabled:boolean};
+type ThinkingMode='off'|'low'|'medium'|'high';
 type Session={authenticated:boolean;accessEnabled:boolean};
 const STORE='anvil:conversations:v2';
 const createChat=():Conversation=>({id:crypto.randomUUID(),title:'New conversation',messages:[],updated:Date.now()});
@@ -28,6 +29,9 @@ export function PublicChat(){
   const [conversations,setConversations]=useState<Conversation[]>(readSaved);
   const [selected,setSelected]=useState<string|null>(null);
   const [input,setInput]=useState('');
+  const [thinking,setThinking]=useState<ThinkingMode>(()=>{
+    try{const mode=localStorage.getItem('anvil:thinking');return mode==='low'||mode==='medium'||mode==='high'?mode:'off'}catch{return 'off'}
+  });
   const [busy,setBusy]=useState(false);
   const [sidebar,setSidebar]=useState(true);
   const [copied,setCopied]=useState<number|null>(null);
@@ -53,6 +57,7 @@ export function PublicChat(){
     catch{setError('Browser storage is full. Export important messages or delete old conversations.');}
   },350);return()=>clearTimeout(t);},[conversations]);
   useEffect(()=>{if(!selected&&conversations.length)setSelected(conversations[0].id)},[]);
+  useEffect(()=>{try{localStorage.setItem('anvil:thinking',thinking)}catch{/* Private browsing */}},[thinking]);
   useEffect(()=>{if(pinned.current)scroller.current?.scrollTo({top:scroller.current.scrollHeight,behavior:'instant'})},[messages]);
   useEffect(()=>{if(textarea.current){textarea.current.style.height='auto';textarea.current.style.height=Math.min(240,textarea.current.scrollHeight)+'px'}},[input]);
   useEffect(()=>()=>{controller.current?.abort();cancelAnimationFrame(frame.current)},[]);
@@ -116,7 +121,7 @@ export function PublicChat(){
     let answer='',buffer='',streamError:string|null=null;
     try{
       const r=await fetch('/api/chat',{method:'POST',headers:{'content-type':'application/json'},
-        body:JSON.stringify({messages:outgoing.slice(-72)}),signal:abort.signal});
+        body:JSON.stringify({messages:outgoing.slice(-72),thinking}),signal:abort.signal});
       if(r.status===401){setSession({authenticated:false,accessEnabled:true});throw Error('Access code required');}
       if(!r.ok||!r.body){const d=await r.json().catch(()=>({error:'Could not contact model'}));throw Error(d.error||'Could not contact model');}
       const reader=r.body.getReader(),decoder=new TextDecoder();
@@ -207,12 +212,19 @@ export function PublicChat(){
         <div className="anvil-chat-composer-area">
           <form className="anvil-chat-composer" onSubmit={send}>
             <textarea ref={textarea} rows={1} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void send()}}} placeholder="Ask Anvil anything…" aria-label="Chat message"/>
-            <div className="anvil-chat-compose-controls"><span>{host.model||'No model'} · <span className="anvil-chat-online">Local Wi-Fi</span></span>
+            <div className="anvil-chat-compose-controls"><div className="anvil-chat-controls-left">
+              <span className="anvil-chat-model-name">{host.model||'No model'} · <span className="anvil-chat-online">Local Wi-Fi</span></span>
+              <label className="anvil-chat-thinking-select"><BrainCircuit size={16}/><span>Thinking</span>
+                <select value={thinking} onChange={e=>setThinking(e.target.value as ThinkingMode)} aria-label="Thinking effort">
+                  <option value="off">Off</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
+                </select>
+              </label>
+              </div>
               <button type={busy?'button':'submit'} disabled={!busy&&!input.trim()} title={busy?'Stop generation':'Send message'} aria-label={busy?'Stop generating':'Send'} onClick={busy?stop:undefined}>{busy?<Square size={16} fill="currentColor"/>:<ArrowUp size={18}/>}</button>
             </div>
           </form>
           {error&&<div className="anvil-chat-error" role="alert"><AlertCircle size={15}/>{error}<button onClick={()=>setError('')}>Dismiss</button></div>}
-          <p className="anvil-chat-disclaimer">Conversations are saved in this browser. Models can make mistakes. Shift + Enter for a new line.</p>
+          <p className="anvil-chat-disclaimer">Chats stay in this browser. Thinking levels depend on the selected AI model. Shift + Enter adds a line.</p>
         </div>
       </>}
     </main>
