@@ -48,6 +48,14 @@ async function bodyJson(req){
   try{return JSON.parse(Buffer.concat(chunks).toString('utf8'));}
   catch{const err=new Error('Invalid JSON.');err.status=400;throw err;}
 }
+function thinkingParameter(model,mode) {
+  const supported=/gpt-oss|qwen3|deepseek-r1|deepseek-v3|phi4-reasoning|qwq/i.test(model);
+  if(mode==='off')return supported?false:undefined;
+  if(mode!=='low'&&mode!=='medium'&&mode!=='high')return undefined;
+  // gpt-oss can tune low/medium/high. Most other reasoning models only
+  // support boolean control; their reasoning depth remains model-defined.
+  return /gpt-oss/i.test(model)?mode:true;
+}
 class HostServer{
   constructor({distDir,ollamaUrl,getModel,onMetrics,port=3000,bindAddress='0.0.0.0',accessEnabled=true,accessCode}){
     this.distDir=distDir;this.ollamaUrl=ollamaUrl;this.getModel=getModel;this.onMetrics=onMetrics;
@@ -150,11 +158,9 @@ class HostServer{
       const model=this.getModel();
       if(!model)return json(res,503,{error:'Select a local model in Anvil first.'});
       const mode=['off','low','medium','high'].includes(data.thinking)?data.thinking:'off';
-      // Ollama exposes graded reasoning for gpt-oss. Other models that support
-      // reasoning generally accept a boolean; they may not expose graded effort.
-      const supportsLevels=/gpt-oss/i.test(model);
-      const think=mode==='off'?false:supportsLevels?mode:true;
-      const payload={model,messages,stream:true,think};
+      const think=thinkingParameter(model,mode);
+      const payload={model,messages,stream:true};
+      if(think!==undefined)payload.think=think;
 
       this.total++;this.active++;this.onMetrics?.(this.status());
       const controller=new AbortController();this.controllers.add(controller);
@@ -214,4 +220,4 @@ class HostServer{
     this.port=null;this.onMetrics?.(this.status());return this.status();
   }
 }
-module.exports={HostServer,secureMatch,privateIP,networkUrls};
+module.exports={HostServer,secureMatch,privateIP,networkUrls,thinkingParameter};
