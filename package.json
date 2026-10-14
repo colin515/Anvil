@@ -1,0 +1,66 @@
+{
+  "name": "anvil-local-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Anvil \u2014 turn your Windows PC into a private local AI host",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "desktop": "electron .",
+    "desktop:dev": "cross-env ANVIL_DEV_URL=http://127.0.0.1:5173 electron .",
+    "build": "tsc --noEmit && vite build",
+    "check": "tsc --noEmit && node --test tests/*.test.cjs",
+    "package:win": "node scripts/create-icon.cjs && npm run build && electron-builder --win nsis --x64 --publish never",
+    "package:dir": "node scripts/create-icon.cjs && npm run build && electron-builder --dir --publish never"
+  },
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "cross-env": "^7.0.3",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.5"
+  },
+  "build": {
+    "appId": "ai.anvil.desktop",
+    "productName": "Anvil",
+    "artifactName": "Anvil-Setup.${ext}",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json",
+      "!**/*.map"
+    ],
+    "asar": true,
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    }
+  }
+}
