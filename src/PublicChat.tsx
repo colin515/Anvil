@@ -1,3 +1,4 @@
+import {Studio} from './Studio';
 import {useCallback,useEffect,useRef,useState,type FormEvent} from 'react';
 import {ArrowUp,Check,Copy,Menu,MessageSquare,Plus,Square,Trash2,Pencil,WifiOff,LockKeyhole,PanelLeftClose,PanelLeftOpen,Flame,AlertCircle,Sparkles,SlidersHorizontal} from 'lucide-react';
 
@@ -52,6 +53,7 @@ export function PublicChat(){
   const [completionProgress,setCompletionProgress]=useState<CompletionProgress|null>(null);
   const [busy,setBusy]=useState(false);
   const [sidebar,setSidebar]=useState(()=>typeof window!=='undefined'&&window.innerWidth>=750);
+  const [area,setArea]=useState<'chat'|'studio'>('chat');
   const [copied,setCopied]=useState<number|null>(null);
   const scroller=useRef<HTMLDivElement>(null);
   const pinned=useRef(true);
@@ -84,12 +86,14 @@ export function PublicChat(){
     setConversations(old=>old.map(c=>c.id===id?{...c,messages:items,title:c.messages.length===0&&items[0]?.role==='user'?escapeTitle(items[0].content):c.title,updated:Date.now()}:c));
   }
   function newChat(){
+    setArea('chat');
     if(busy)stop();
     setSelected(null);setInput('');setError('');pinned.current=true;
     textarea.current?.focus();
     if(window.innerWidth<750)setSidebar(false);
   }
   function chooseChat(id:string){
+    setArea('chat');
     if(busy)stop();
     setSelected(id);setError('');pinned.current=true;
     if(window.innerWidth<750)setSidebar(false);
@@ -215,6 +219,7 @@ export function PublicChat(){
       <header className="anvil-chat-topbar">
         <button className="anvil-chat-mobile-menu" title="Menu" aria-label="Menu" onClick={()=>setSidebar(v=>!v)}><Menu size={20}/></button>
         <span className="anvil-chat-top-title">Anvil <span className="anvil-chat-model">{host?.model||'Local AI'}</span></span>
+        <div className="anvil-area-tabs" role="group" aria-label="Workspace"><button className={area==='chat'?'active':''} onClick={()=>setArea('chat')}>Chat</button><button className={area==='studio'?'active':''} onClick={()=>setArea('studio')}>Studio</button></div>
         <span className="anvil-chat-private"><span/> LOCAL NETWORK</span>
       </header>
       {offline||!host?<div className="anvil-chat-offline"><WifiOff size={28}/><h2>{offline?'Server offline':'Connecting…'}</h2><p>Start the Anvil LAN server on your Windows PC and refresh this page.</p><button onClick={()=>void refresh()}>Retry</button></div>:
@@ -224,7 +229,7 @@ export function PublicChat(){
         <form onSubmit={login}><label htmlFor="anvil-code">Access code</label><input id="anvil-code" autoComplete="one-time-code" value={code} onChange={e=>setCode(e.target.value)} placeholder="Enter access code" required/><button type="submit" disabled={loginBusy}>{loginBusy?'Checking…':'Connect'}</button></form>
         {error&&<p className="anvil-chat-error" role="alert">{error}</p>}
       </div>:
-      <>
+      area==='studio'?<Studio/>:<>
         <div className="anvil-chat-scroll" ref={scroller} onScroll={e=>{const node=e.currentTarget;pinned.current=node.scrollHeight-node.scrollTop-node.clientHeight<135}} aria-label="Messages">
           {messages.length===0?<div className="anvil-chat-welcome"><span className="anvil-chat-welcome-mark"><Flame size={27}/></span><h1>Where should we start?</h1><p>Ask anything. Powered by {host.model||'your local AI'}.</p></div>:
           <div className="anvil-chat-thread">
