@@ -10,7 +10,7 @@ const createChat=():Conversation=>({id:crypto.randomUUID(),title:'New conversati
 function readSaved():Conversation[]{
   try{
     const value=JSON.parse(localStorage.getItem(STORE)||'[]');
-    return Array.isArray(value)?value.filter(c=>typeof c?.id==='string'&&Array.isArray(c.messages)&&typeof c.title==='string').slice(0,80):[];
+    return Array.isArray(value)?value.filter(c=>typeof c?.id==='string'&&Array.isArray(c.messages)&&typeof c.title==='string'):[];
   }catch{return [];}
 }
 function escapeTitle(text:string){return text.replace(/\s+/g,' ').trim().slice(0,46)||'New conversation';}
@@ -106,7 +106,7 @@ export function PublicChat(){
     if(content.length>120000){setError('A single message can use up to 120,000 characters for safety.');return;}
     let id=selected;
     const newConversation=!id?createChat():null;
-    if(newConversation){id=newConversation.id;setSelected(id);setConversations(old=>[newConversation,...old].slice(0,80));}
+    if(newConversation){id=newConversation.id;setSelected(id);setConversations(old=>[newConversation,...old]);}
     if(!id)return;
     const outgoing=[...messages,{role:'user' as const,content}];
     const initial=[...outgoing,{role:'assistant' as const,content:''}];
