@@ -388,3 +388,14 @@
   .anvil-chat-private{display:none}
   .anvil-chat-welcome h1{font-size:22px}
 }
+
+/* Workspace switcher: chat and local creator tools */
+.anvil-area-tabs{display:flex;align-items:center;gap:3px;border:1px solid #34343b;border-radius:10px;padding:3px;background:#24242a;margin-left:auto}
+.anvil-area-tabs button{border:0;background:transparent;color:#aaaab5;border-radius:7px;padding:7px 13px;min-height:32px;font-size:12px;font-weight:590}
+.anvil-area-tabs button.active{background:#444654;color:#fff}
+.anvil-area-tabs button:hover:not(.active){background:#33343b;color:#fff}
+@media(max-width:750px){
+.anvil-area-tabs{margin-left:auto;margin-right:0}
+.anvil-area-tabs button{min-height:36px;min-width:53px;padding:7px}
+.anvil-chat-private{display:none}
+}
