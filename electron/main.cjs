@@ -4,7 +4,7 @@ const {app, BrowserWindow, ipcMain, shell, clipboard} = require('electron');
 const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs');
-const {execFile} = require('node:child_process');
+const {execFile, spawn} = require('node:child_process');
 const {promisify} = require('node:util');
 const {HostServer} = require('./host-server.cjs');
 const {gb,recommendations,displaySafeError} = require('./logic.cjs');
@@ -12,6 +12,7 @@ const {gb,recommendations,displaySafeError} = require('./logic.cjs');
 const execFileAsync=promisify(execFile);
 const OLLAMA='http://127.0.0.1:11434';
 let window=null, hardware=null, host=null, activeModel=null, accessEnabled=true, accessCode=null;
+let managedOllama=null, startEverythingTask=null;
 function preferencesPath(){return path.join(app.getPath('userData'),'preferences.json');}
 function loadPreferences(){try{const settings=JSON.parse(fs.readFileSync(preferencesPath(),'utf8'));hardware=settings.hardware||null;activeModel=typeof settings.activeModel==='string'?settings.activeModel:null;accessEnabled=settings.accessEnabled!==false;accessCode=typeof settings.accessCode==='string'?settings.accessCode:null;}catch{/* First launch or invalid settings */}}
 function savePreferences(){try{fs.mkdirSync(app.getPath('userData'),{recursive:true});fs.writeFileSync(preferencesPath(),JSON.stringify({hardware,activeModel,accessEnabled,accessCode},null,2));}catch(err){emit('app:error',`Could not save local preferences: ${displaySafeError(err)}`);}}
@@ -121,9 +122,80 @@ async function shutdownAnvil(){
   await host.stop();
   let unloadError=null;
   try{await unloadModel();}catch(e){unloadError=e.message;}
+  await stopManagedOllama();
   // Stop Anvil completely; never kill a separately managed Ollama daemon or other apps.
   setImmediate(()=>app.quit());
   return {stopped:true,unloadError};
+}
+// Anvil starts an Ollama server only if no existing instance is available.
+// A separately running Ollama (including the official tray app) is never killed.
+async function findOllamaBinary() {
+  const candidates=[];
+  const pathEnv=process.env.LOCALAPPDATA;
+  if(pathEnv){
+    candidates.push(path.join(pathEnv,'Programs','Ollama','ollama.exe'));
+    candidates.push(path.join(pathEnv,'Ollama','ollama.exe'));
+  }
+  if(process.env.PROGRAMFILES)candidates.push(path.join(process.env.PROGRAMFILES,'Ollama','ollama.exe'));
+  for(const candidate of candidates)if(fs.existsSync(candidate))return candidate;
+  try{
+    const found=await execFileAsync(process.platform==='win32'?'where.exe':'which',['ollama'],{windowsHide:true,timeout:5000});
+    const pathFound=found.stdout.trim().split(/\r?\n/)[0];
+    if(pathFound)return pathFound;
+  }catch{/* Not present on PATH */}
+  throw new Error('Ollama is not installed. Install Ollama for Windows first, then click Start Everything.');
+}
+const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function ensureOllamaRunning() {
+  const initial=await ollamaStatus();
+  if(initial.online)return initial;
+  emit('startup:step',{message:'Launching Ollama engine…'});
+  const exe=await findOllamaBinary();
+  const processHandle=spawn(exe,['serve'],{
+    cwd:path.dirname(exe),windowsHide:true,stdio:'ignore',env:{...process.env,OLLAMA_HOST:'127.0.0.1:11434'}
+  });
+  managedOllama=processHandle;
+  let spawnError=null;
+  processHandle.once('error',error=>{spawnError=error;});
+  const deadline=Date.now()+25000;
+  while(Date.now()<deadline) {
+    await wait(700);
+    const state=await ollamaStatus();
+    if(state.online)return state;
+    if(spawnError)break;
+    if(processHandle.exitCode!=null)break;
+  }
+  managedOllama=null;
+  throw new Error('Could not start Ollama. Check the Ollama installation or Windows logs and retry.');
+}
+async function startEverything() {
+  if(startEverythingTask)return startEverythingTask;
+  startEverythingTask=(async()=>{
+    try{
+      emit('startup:step',{message:'Checking Ollama…'});
+      const state=await ensureOllamaRunning();
+      const names=state.models.map(item=>item.name);
+      if(names.length===0)throw new Error('Ollama is running but has no model. Download one under My models, then click Start Everything again.');
+      if(!activeModel||!names.includes(activeModel)){
+        activeModel=names[0];savePreferences();
+        emit('startup:step',{message:'Selected '+activeModel});
+      }
+      emit('startup:step',{message:'Starting your Wi-Fi chat server…'});
+      const hostState=await host.start();
+      emit('startup:step',{message:'Everything is running.'});
+      return {host:hostState,ollama:state,activeModel};
+    }catch(e){
+      emit('startup:step',{message:''});
+      throw e;
+    }finally{startEverythingTask=null;}
+  })();
+  return startEverythingTask;
+}
+async function stopManagedOllama() {
+  const owned=managedOllama;managedOllama=null;
+  if(owned&&!owned.killed&&owned.exitCode===null){
+    try{owned.kill();}catch{/* Process already stopped */}
+  }
 }
 function register() {
   ipcMain.handle('hardware:scan',scanHardware);
@@ -136,6 +208,7 @@ function register() {
   });
   ipcMain.handle('model:benchmark',(_e,model)=>benchmarkModel(model||activeModel));
   ipcMain.handle('host:start',()=>host.start());
+  ipcMain.handle('host:start-all',startEverything);
   ipcMain.handle('host:access',(_e,enabled)=>{if(typeof enabled!=='boolean')throw Error('Expected boolean');accessEnabled=enabled;const state=host.setAccess(enabled);savePreferences();return state;});
   ipcMain.handle('host:regenerate',()=>{const state=host.regenerateCode();accessCode=state.code;savePreferences();return state;});
   ipcMain.handle('host:settings',()=>host.accessSettings());
