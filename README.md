@@ -4,7 +4,7 @@
 
 > **Website:** GitHub Pages is enabled. The repository-root site redirects to the standalone product/download page at [Anvil /docs](https://colin515.github.io/Anvil/docs/), while preserving the desktop app's Vite entry point. The public website does not host AI inference.
 
-## Anvil v0.4 — One-click Ollama startup, Wi-Fi chat and thinking controls
+## Anvil v0.5 — Automatic prompt completion and self-review
 
 Anvil runs local AI on your Windows PC using Ollama and serves a clean browser chat to devices on the **same private Wi-Fi / LAN**. It does **not** create an internet-exposed server or tunnel.
 
@@ -18,6 +18,19 @@ Anvil runs local AI on your Windows PC using Ollama and serves a clean browser c
 - **GPU usage:** live measured GPU-wide percentage on supported NVIDIA GPUs, Windows GPU-engine estimate as a fallback; this is **not** a precise AI-only utilization counter. Unsupported drivers display unavailable.
 - **Stop AI / Shutdown:** Stop AI closes the chat server and asks Ollama to unload the active model from RAM/VRAM. Shut down Anvil also quits the desktop program; it does not kill an independently running Ollama service.
 - The downloadable Windows installer is unsigned and meant for preview/personal testing.
+
+## Automatic prompt completion
+
+Open **Anvil's local browser chat** and enable **Auto refine** next to the Thinking control. Open the slider settings to configure:
+
+- **Target self-rated confidence:** 50–99%, default **95%**.
+- **Maximum attempts:** 1–6, default **4**, preventing runaway GPU usage.
+- **Per-call timeout:** 30, 60, 120 or 240 seconds. The selected Ollama model and device determine actual speed.
+- **Thinking effort:** Existing Off/Low/Medium/High settings still apply where Ollama supports them.
+
+Each attempt generates an answer, then asks the **same local model** to review it for relevance, completeness, internal consistency and unsupported claims. Anvil shows progress and the model's score for each pass, revises the answer using feedback, and stops once the target is met or the maximum attempt count is reached. The final answer remains available even if the threshold is not reached; its outcome, score and reviewer feedback are saved with the conversation in that browser.
+
+**Important:** A model rating its own answer at 95% does **not** establish a statistically calibrated 95% probability of factual accuracy. The reviewer has no external fact-checking or web verification. If the reviewer cannot return valid structured feedback, Anvil reports the review as unavailable instead of inventing a score. Each draft/review pair uses additional local inference time and resources. Press **Stop Generation** at any time.
 
 ## Setup
 
