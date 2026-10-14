@@ -8,11 +8,14 @@ export interface ModelChoice {
 }
 export interface OllamaState { online: boolean; models: {name:string;sizeGb:number}[]; }
 export interface HostState {
-  online: boolean; localUrl: string|null; publicUrl: string|null;
+  online: boolean; localUrl: string|null; lanUrls: {url:string;interface:string;ip:string}[];
+  accessEnabled:boolean;publicUrl: string|null;
   connectedUsers: number; activeRequests: number; totalRequests: number; invite: string|null;
 }
+export interface AccessState {enabled:boolean;code:string;}
+export interface GpuUsage {percent:number|null;vramUsedMb:number|null;vramTotalMb:number|null;source:string;scope:string;}
 export interface ScanResult {hardware: Hardware; models: ModelChoice[]}
-export interface AppState {hardware: Hardware|null; activeModel:string|null;host:HostState;ollama:OllamaState;}
+export interface AppState {hardware: Hardware|null; activeModel:string|null;host:HostState;ollama:OllamaState;access:AccessState;}
 export interface PullEvent {model:string;status:string;completed:number;total:number;}
 export interface ScanEvent {key:string;value:string;status:'complete'|'unknown';}
 declare global {
