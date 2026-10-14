@@ -28,8 +28,14 @@ test('host serves local streamed tokens without invites and shuts down',async()=
     assert.equal(st.online,true);
     assert.equal(st.publicUrl,null);
     const base=st.localUrl;
-    const badHost=await fetch(base+'/api/status',{headers:{host:'attacker.invalid'}});
-    assert.equal(badHost.status,403);
+    const badHostCode=await new Promise((resolve,reject)=>{
+      const request=http.request(base+'/api/status',{headers:{host:'attacker.invalid'}},response=>{
+        response.resume(); response.on('end',()=>resolve(response.statusCode));
+      });
+      request.on('error',reject);
+      request.end();
+    });
+    assert.equal(badHostCode,403);
     const crossSite=await fetch(base+'/api/chat',{method:'POST',headers:{'content-type':'application/json',origin:'https://example.com'},body:JSON.stringify({messages:[{role:'user',content:'hi'}]})});
     assert.equal(crossSite.status,403);
     const homepage=await fetch(base);
