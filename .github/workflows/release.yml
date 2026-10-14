@@ -1,4 +1,4 @@
-name: Build local-only Anvil for Windows
+name: Build Anvil Windows installer
 
 on:
   push:
@@ -51,11 +51,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v0.3.0-lan"
+          $tag = "v0.4.0-oneclick"
           $file = "release/Anvil-Setup.exe"
           gh release view $tag --repo "${{ github.repository }}" *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $file --clobber --repo "${{ github.repository }}"
           } else {
-            gh release create $tag $file --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "Anvil v0.3.0 — Private Wi-Fi hosting" --notes "Private Wi-Fi/LAN hosting with optional access codes, real GPU-wide utilization where supported, stop AI + unload, persistent multi-chat browser interface, longer messages, no message quota. Requires Ollama. Allow TCP 3000 on the Private Windows Firewall profile for LAN access. No public internet tunnel. Unsigned Windows preview installer."
+            gh release create $tag $file --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "Anvil v0.4.0 — One-click Ollama startup and thinking modes" --notes "Start Everything detects or launches Ollama, chooses an installed model and starts private Wi-Fi chat. Browser chat offers Off/Low/Medium/High thinking controls (exact graded levels depend on the model). Website root redirect fixed. Requires Ollama installed and an existing downloaded model. Allow TCP 3000 on the Private Windows Firewall profile only. Unsigned preview installer."
           }
