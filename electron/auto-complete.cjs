@@ -44,7 +44,7 @@ async function invokeModel({ollamaUrl,model,messages,format,options,think,signal
   abortCheck(signal);
   return content.trim();
 }
-async function runAutoCompletion({ollamaUrl,model,messages,settings,think,signal,onProgress,fetchImpl=fetch}){
+async function runAutoCompletion({ollamaUrl,model,messages,settings,think,reviewThink,signal,onProgress,fetchImpl=fetch}){
   const config=normalizeCompletion({...settings,enabled:true});
   const userRequest=[...messages].reverse().find(m=>m.role==='user')?.content||'';
   const context=messages.slice(-72);
@@ -70,7 +70,7 @@ async function runAutoCompletion({ollamaUrl,model,messages,settings,think,signal
       const raw=await invokeModel({ollamaUrl,model,messages:[
         {role:'system',content:rubric},
         {role:'user',content:JSON.stringify({originalRequest:userRequest.slice(0,30000),draft:draft.slice(0,50000)})}
-      ],format:'json',options:{temperature:0},think:false,signal,timeoutSeconds:config.timeoutSeconds,fetchImpl});
+      ],format:'json',options:{temperature:0},think:reviewThink,signal,timeoutSeconds:config.timeoutSeconds,fetchImpl});
       assessment=parseAssessment(raw);
     }catch(e){
       abortCheck(signal);
