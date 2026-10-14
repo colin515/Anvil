@@ -5,11 +5,20 @@ const http=require('node:http');
 const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
-const {HostServer,privateIP}=require('../electron/host-server.cjs');
+const {HostServer,privateIP,thinkingParameter}=require('../electron/host-server.cjs');
 
 function listen(server){return new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));}
 function close(server){return new Promise(resolve=>server.close(resolve));}
 
+test('Ollama thinking effort is model-aware',()=>{
+  assert.equal(thinkingParameter('qwen2.5:3b','off'),undefined);
+  assert.equal(thinkingParameter('qwen3:8b','off'),false);
+  assert.equal(thinkingParameter('qwen3:8b','high'),true);
+  assert.equal(thinkingParameter('gpt-oss:20b','low'),'low');
+  assert.equal(thinkingParameter('gpt-oss:20b','medium'),'medium');
+  assert.equal(thinkingParameter('gpt-oss:20b','high'),'high');
+  assert.equal(thinkingParameter('llama3.2:3b','medium'),true);
+});
 test('private LAN address classification',()=>{
   assert.equal(privateIP('192.168.1.42'),true);
   assert.equal(privateIP('10.0.0.23'),true);
