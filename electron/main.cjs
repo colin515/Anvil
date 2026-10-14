@@ -11,10 +11,10 @@ const {gb,recommendations,displaySafeError} = require('./logic.cjs');
 
 const execFileAsync=promisify(execFile);
 const OLLAMA='http://127.0.0.1:11434';
-let window=null, hardware=null, host=null, activeModel=null;
+let window=null, hardware=null, host=null, activeModel=null, accessEnabled=true, accessCode=null;
 function preferencesPath(){return path.join(app.getPath('userData'),'preferences.json');}
-function loadPreferences(){try{const settings=JSON.parse(fs.readFileSync(preferencesPath(),'utf8'));hardware=settings.hardware||null;activeModel=typeof settings.activeModel==='string'?settings.activeModel:null;}catch{/* First launch or invalid settings */}}
-function savePreferences(){try{fs.mkdirSync(app.getPath('userData'),{recursive:true});fs.writeFileSync(preferencesPath(),JSON.stringify({hardware,activeModel},null,2));}catch(err){emit('app:error',`Could not save local preferences: ${displaySafeError(err)}`);}}
+function loadPreferences(){try{const settings=JSON.parse(fs.readFileSync(preferencesPath(),'utf8'));hardware=settings.hardware||null;activeModel=typeof settings.activeModel==='string'?settings.activeModel:null;accessEnabled=settings.accessEnabled!==false;accessCode=typeof settings.accessCode==='string'?settings.accessCode:null;}catch{/* First launch or invalid settings */}}
+function savePreferences(){try{fs.mkdirSync(app.getPath('userData'),{recursive:true});fs.writeFileSync(preferencesPath(),JSON.stringify({hardware,activeModel,accessEnabled,accessCode},null,2));}catch(err){emit('app:error',`Could not save local preferences: ${displaySafeError(err)}`);}}
 
 function emit(channel, data) { if(window && !window.isDestroyed()) window.webContents.send(channel,data); }
 async function powerShell(code) {
@@ -89,6 +89,42 @@ async function benchmarkModel(model) {
   return {tokens,seconds:+(duration/1e9).toFixed(2),tokensPerSecond:duration>0?+(tokens/(duration/1e9)).toFixed(1):0};
 }
 
+
+async function unloadModel(){
+  if(!activeModel)return {unloaded:false,reason:'No active model'};
+  const model=activeModel;
+  try{
+    const r=await api('/api/generate',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({model,prompt:'',keep_alive:0,stream:false}),signal:AbortSignal.timeout(20000)});
+    await r.text();
+    return {unloaded:true,model};
+  }catch(e){throw Error('Could not unload model from Ollama: '+displaySafeError(e));}
+}
+
+async function gpuUsage(){
+  // GPU-wide utilization, NOT Ollama-process-only: drivers don't reliably expose that cross-vendor.
+  if(process.platform!=='win32')return {percent:null,source:'Unavailable',scope:'whole GPU',vramUsedMb:null,vramTotalMb:null};
+  try{
+    const x=await execFileAsync('nvidia-smi',['--query-gpu=utilization.gpu,memory.used,memory.total','--format=csv,noheader,nounits'],{windowsHide:true,timeout:5000,maxBuffer:65536});
+    const cells=x.stdout.trim().split('\n')[0].split(',').map(v=>Number(v.trim()));
+    if(cells.length===3&&cells.every(Number.isFinite))return {percent:Math.min(100,Math.max(0,cells[0])),vramUsedMb:cells[1],vramTotalMb:cells[2],source:'NVIDIA NVML',scope:'whole GPU'};
+  }catch{ /* Fall back to Windows GPU engine counters */ }
+  try{
+    const ps="$ErrorActionPreference='Stop'; $x=(Get-Counter '\\GPU Engine(*)\\Utilization Percentage' -ErrorAction Stop).CounterSamples | Select-Object -ExpandProperty CookedValue; if($x){[math]::Round(($x | Measure-Object -Maximum).Maximum,0)} else {'NA'}";
+    const {stdout}=await execFileAsync('powershell.exe',['-NoProfile','-NonInteractive','-Command',ps],{windowsHide:true,timeout:5000});
+    const percent=Number(stdout.trim());
+    if(Number.isFinite(percent)&&stdout.trim()!=='NA')return {percent:Math.min(100,Math.max(0,percent)),vramUsedMb:null,vramTotalMb:null,source:'Windows GPU engines (peak)',scope:'peak engine estimate'};
+  }catch{}
+  return {percent:null,source:'GPU counters unavailable',scope:'whole GPU',vramUsedMb:null,vramTotalMb:null};
+}
+async function shutdownAnvil(){
+  await host.stop();
+  let unloadError=null;
+  try{await unloadModel();}catch(e){unloadError=e.message;}
+  // Stop Anvil completely; never kill a separately managed Ollama daemon or other apps.
+  setImmediate(()=>app.quit());
+  return {stopped:true,unloadError};
+}
 function register() {
   ipcMain.handle('hardware:scan',scanHardware);
   ipcMain.handle('ollama:status',ollamaStatus);
@@ -100,11 +136,17 @@ function register() {
   });
   ipcMain.handle('model:benchmark',(_e,model)=>benchmarkModel(model||activeModel));
   ipcMain.handle('host:start',()=>host.start());
+  ipcMain.handle('host:access',(_e,enabled)=>{if(typeof enabled!=='boolean')throw Error('Expected boolean');accessEnabled=enabled;const state=host.setAccess(enabled);savePreferences();return state;});
+  ipcMain.handle('host:regenerate',()=>{const state=host.regenerateCode();accessCode=state.code;savePreferences();return state;});
+  ipcMain.handle('host:settings',()=>host.accessSettings());
+  ipcMain.handle('gpu:usage',gpuUsage);
+  ipcMain.handle('model:unload',async()=>{await host.stop();return unloadModel();});
+  ipcMain.handle('app:shutdown',shutdownAnvil);
   ipcMain.handle('local:open',async()=>{if(!host.status().online)throw new Error('Start the local server first.');return shell.openExternal(host.status().localUrl);});
-  ipcMain.handle('local:copy',()=>{const link=host.status().localUrl || 'http://127.0.0.1:3000';clipboard.writeText(link);return link;});
+  ipcMain.handle('local:copy',()=>{const link=host.status().lanUrls[0]?.url || host.status().localUrl || 'http://127.0.0.1:3000';clipboard.writeText(link);return link;});
   ipcMain.handle('host:stop',()=>host.stop());
   ipcMain.handle('host:status',()=>host.status());
-  ipcMain.handle('app:state',async()=>({hardware,activeModel,host:host.status(),ollama:await ollamaStatus()}));
+  ipcMain.handle('app:state',async()=>({hardware,activeModel,host:host.status(),ollama:await ollamaStatus(),access:host.accessSettings()}));
   ipcMain.handle('external:open',(_e,url)=>{
     const allowed=['https://ollama.com/','https://github.com/colin515/Anvil'];
     if(typeof url!=='string'||!allowed.some(p=>url.startsWith(p)))throw new Error('URL not allowed');
@@ -123,7 +165,8 @@ function createWindow() {
 
 app.whenReady().then(()=>{
   loadPreferences();
-  host=new HostServer({distDir:path.join(__dirname,'../dist'),ollamaUrl:OLLAMA,getModel:()=>activeModel,onMetrics:s=>emit('host:status',s)});
+  host=new HostServer({distDir:path.join(__dirname,'../dist'),ollamaUrl:OLLAMA,getModel:()=>activeModel,onMetrics:s=>emit('host:status',s),accessEnabled,accessCode});
+  accessCode=host.accessSettings().code;savePreferences();
   register();createWindow();
   app.on('activate',()=>{if(BrowserWindow.getAllWindows().length===0)createWindow();});
 });
