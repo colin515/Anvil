@@ -1,6 +1,6 @@
 {
   "name": "anvil-local-ai",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Anvil \u2014 turn your Windows PC into a private local AI host",
   "main": "electron/main.cjs",
