@@ -1,5 +1,9 @@
 # Anvil — Your hardware. Your intelligence.
 
+**Website:** [https://colin515.github.io/Anvil/](https://colin515.github.io/Anvil/) · **Windows download:** [Anvil-Setup.exe](https://github.com/colin515/Anvil/releases/download/v0.1.0-preview/Anvil-Setup.exe) · [Releases](https://github.com/colin515/Anvil/releases)
+
+> **Website activation required:** The product website is already included in `docs/`, but GitHub Pages must first be enabled in **Repository Settings → Pages → Build and deployment → Source → GitHub Actions**. Then run **Actions → Publish Anvil website → Run workflow**. Until GitHub Pages is enabled, the website link above will not load.
+
 An early **Windows desktop MVP** that turns an Ollama-powered PC into a local AI host, with a visitor chat that can optionally be shared through Cloudflare Quick Tunnels. Includes a premium marketing website for **GitHub Pages** and GitHub Actions to package a downloadable Windows installer.
 
 > **Status:** Working source implementation / early personal-testing MVP. This repository does not bundle Ollama, sign its installer, or claim production-grade public hosting security. Hardware fit scores are estimates, not guaranteed speeds. The app must be built on Windows for the installer.
@@ -66,7 +70,7 @@ Quick Tunnels are intended for development and experimentation, not hardened pro
 Repository: **https://github.com/colin515/Anvil**. The project uses GitHub Actions to test source, build a Windows installer and deploy the product website.
 
 1. Push this project's contents to the `main` branch.
-2. In **Settings → Pages**, choose **GitHub Actions** as the source. `.github/workflows/pages.yml` deploys `docs/` to `https://<username>.github.io/anvil/` after a push to `main`.
+2. In **Settings → Pages**, choose **GitHub Actions** as the source. **This initial activation must be made by the repository owner:** GitHub Actions tokens cannot create a Pages site if repository administration blocks it. Then open **Actions → Publish Anvil website → Run workflow** to deploy `docs/` to `https://colin515.github.io/Anvil/`.
 3. Run `npm install` (Node 22). The workflows install dependencies on the hosted runners.
 4. After checking the Windows build locally, push a version tag, e.g. `git tag v0.1.0 && git push origin v0.1.0`. The release workflow builds on `windows-latest` and uploads **Anvil-Setup.exe** as a GitHub Release asset.
 5. The public website reads GitHub's latest release API. The download button becomes a direct `.exe` link once `Anvil-Setup.exe` is published. Until then it links to the Releases page without claiming an installer exists.
