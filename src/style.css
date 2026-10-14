@@ -225,7 +225,7 @@
 .anvil-chat-composer-area{width:min(830px,calc(100% - 44px));margin:0 auto;padding:0 0 max(17px,env(safe-area-inset-bottom));flex:none;position:relative}
 .anvil-chat-composer{background:#27272a;border:1px solid #38383d;border-radius:24px;box-shadow:0 8px 30px rgba(0,0,0,.13);padding:15px 17px 10px;display:flex;flex-direction:column;gap:7px}
 .anvil-chat-composer:focus-within{border-color:#585863}
-.anvil-chat-composer textarea{border:0;outline:0!important;resize:none;background:transparent;color:#eeeef0;width:100%;min-height:35px;max-height:240px;padding:7px 5px 0;font:14px/1.55 inherit;overflow-y:auto}
+.anvil-chat-composer textarea{border:0;outline:0!important;resize:none;background:transparent;color:#eeeef0;width:100%;min-height:35px;max-height:240px;padding:7px 5px 0;font-family:inherit;font-size:14px;line-height:1.55;overflow-y:auto}
 .anvil-chat-composer textarea::placeholder{color:#a5a5ad}
 .anvil-chat-compose-controls{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-top:2px}
 .anvil-chat-compose-controls>span{font-size:11px;color:#a8a8b0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
