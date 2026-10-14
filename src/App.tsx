@@ -1,11 +1,11 @@
 import {useEffect,useMemo,useState} from 'react';
 import {Activity,ArrowDownToLine,ArrowLeft,ArrowRight,ArrowUpRight,BarChart3,Check,CheckCircle2,ChevronDown,ChevronRight,CircleAlert,Cloud,Copy,Cpu,Download,ExternalLink,Flame,Gauge,Globe,HardDrive,HeartPulse,Home,Info,KeyRound,Layers3,LoaderCircle,Lock,MemoryStick,Monitor,MoreHorizontal,Play,Power,RefreshCw,Server,Settings2,Shield,ShieldCheck,Sparkles,Square,Terminal,Users,Wifi,WifiOff,Zap} from 'lucide-react';
-import type {AppState,Hardware,HostState,ModelChoice,OllamaState,PullEvent,ScanEvent} from './types';
+import type {AccessState,AppState,GpuUsage,Hardware,HostState,ModelChoice,OllamaState,PullEvent,ScanEvent} from './types';
 import {Meter,NumberFlow,Reveal,StatusPill} from './motion';
 import {PublicChat} from './PublicChat';
 
 type View='home'|'discover'|'models'|'console'|'settings';
-const zeroHost:HostState={online:false,localUrl:null,publicUrl:null,connectedUsers:0,activeRequests:0,totalRequests:0,invite:null};
+const zeroHost:HostState={online:false,localUrl:null,publicUrl:null,lanUrls:[],accessEnabled:true,connectedUsers:0,activeRequests:0,totalRequests:0,invite:null};
 const emptyOllama:OllamaState={online:false,models:[]};
 const catalog:ModelChoice[]=[
   {id:'qwen2.5:3b',name:'Qwen 2.5 · 3B',gb:2,description:'Fast everyday conversation',tags:['Fast','General'],context:'Lightweight',fit:0,tier:'cpu',note:'Scan to check compatibility'},
@@ -14,7 +14,7 @@ const catalog:ModelChoice[]=[
   {id:'gemma3:12b',name:'Gemma 3 · 12B',gb:8.1,description:'More advanced responses',tags:['Advanced','Reasoning'],context:'High-end',fit:0,tier:'cpu',note:'Scan to check compatibility'},
   {id:'qwen2.5:14b',name:'Qwen 2.5 · 14B',gb:9,description:'Advanced general and coding',tags:['Advanced','Coding'],context:'High-end',fit:0,tier:'cpu',note:'Scan to check compatibility'},
 ];
-const nav=[{key:'home',label:'Overview',icon:Home},{key:'discover',label:'Discover models',icon:Sparkles},{key:'models',label:'My models',icon:Layers3},{key:'console',label:'Local server',icon:BarChart3},{key:'settings',label:'Settings',icon:Settings2}] as const;
+const nav=[{key:'home',label:'Overview',icon:Home},{key:'discover',label:'Discover models',icon:Sparkles},{key:'models',label:'My models',icon:Layers3},{key:'console',label:'Wi-Fi host',icon:BarChart3},{key:'settings',label:'Settings',icon:Settings2}] as const;
 const steps=['Welcome','Hardware scan','Your needs','Benchmark','Recommendation','Download','Serve','Local chat'];
 const call=<T,>(channel:string,...args:unknown[])=>window.anvil!.invoke<T>(channel,...args);
 function compactError(err:unknown){return err instanceof Error?err.message:String(err)}
@@ -38,6 +38,8 @@ export default function App(){
   const [scanResults,setScanResults]=useState<Record<string,ScanEvent>>({}),[pull,setPull]=useState<PullEvent|null>(null);
   const [working,setWorking]=useState(''),[benchmark,setBenchmark]=useState<{tokens:number;seconds:number;tokensPerSecond:number}|null>(null);
   const [usage,setUsage]=useState('balanced'),[shareCopied,setShareCopied]=useState(false);
+  const [access,setAccess]=useState<AccessState>({enabled:true,code:''});
+  const [gpu,setGpu]=useState<GpuUsage|null>(null);
   const installed=useMemo(()=>new Set(ollama.models.map(m=>m.name)),[ollama]);
   const chosen=models.find(m=>m.id===choice)||models[0];
 
@@ -51,7 +53,7 @@ export default function App(){
       window.anvil.on('app:error',(e:string)=>setError(e)),
     ];
     void call<AppState>('app:state').then(s=>{
-      setHardware(s.hardware);setOllama(s.ollama);setHost(s.host);setSelected(s.activeModel);
+      setHardware(s.hardware);setOllama(s.ollama);setHost(s.host);setSelected(s.activeModel);setAccess(s.access);
       if(s.hardware){setWizard(false);void call<{hardware:Hardware;models:ModelChoice[]}>('hardware:scan').then(r=>{setModels(r.models)});}
       if(s.activeModel)setChoice(s.activeModel);
     }).catch(e=>setError(compactError(e))).finally(()=>setLoading(false));
@@ -59,6 +61,35 @@ export default function App(){
   },[]);
 
   useEffect(()=>{if(!notice)return;const timer=setTimeout(()=>setNotice(''),4500);return()=>clearTimeout(timer)},[notice]);
+  useEffect(()=>{
+    if(!window.anvil)return;
+    let mounted=true;
+    const read=()=>{void call<GpuUsage>('gpu:usage').then(x=>{if(mounted)setGpu(x)}).catch(()=>{if(mounted)setGpu(null)})};
+    read();const timer=window.setInterval(read,4000);
+    return()=>{mounted=false;window.clearInterval(timer);};
+  },[]);
+
+  async function updateAccess(enabled:boolean){
+    if(!enabled&&!window.confirm('Disable the access code? Anyone connected to your Wi-Fi / private LAN who knows the address will be able to use your AI.'))return;
+    setWorking('access');setError('');
+    try{setAccess(await call<AccessState>('host:access',enabled));setNotice(enabled?'Access code required for LAN chat':'LAN chat is now open to other devices on your network');}
+    catch(e){setError(compactError(e))}finally{setWorking('')}
+  }
+  async function regenerateCode(){
+    if(!window.confirm('Generate a new access code? Existing chat sessions will need to log in again.'))return;
+    try{setAccess(await call<AccessState>('host:regenerate'));setNotice('New access code generated');}
+    catch(e){setError(compactError(e))}
+  }
+  async function stopAi(){
+    if(!window.confirm('Stop hosting, interrupt current requests and unload the selected AI model from Ollama GPU/RAM?'))return;
+    setWorking('stop-ai');setError('');
+    try{await call('model:unload');setHost(await call<HostState>('host:status'));setNotice('AI unloaded and LAN server stopped');}
+    catch(e){setError(compactError(e))}finally{setWorking('')}
+  }
+  async function shutDown(){
+    if(!window.confirm('Stop the server, unload the AI model and quit Anvil? Ollama itself will stay installed and any separately running Ollama daemon will not be killed.'))return;
+    setWorking('shutdown');try{await call('app:shutdown')}catch(e){setError(compactError(e));setWorking('')}
+  }
 
   async function refreshOllama(){try{setOllama(await call('ollama:status'));}catch(e){setError(compactError(e));}}
   async function scan(){setScanning(true);setError('');setScanResults({});try{const r=await call<{hardware:Hardware;models:ModelChoice[]}>('hardware:scan');setHardware(r.hardware);setModels(r.models);setChoice(r.models[0]?.id||choice)}catch(e){setError(compactError(e))}finally{setScanning(false)}}
@@ -70,9 +101,9 @@ export default function App(){
     catch(e){setError(compactError(e))}finally{setWorking('')}
   }
   async function runBenchmark(){setWorking('benchmark');setError('');try{setBenchmark(await call('model:benchmark',selected||choice));setNotice('Benchmark complete — measured on your machine');}catch(e){setError(compactError(e))}finally{setWorking('')}}
-  async function startHost(){setWorking('start');setError('');try{const s=await call<HostState>('host:start');setHost(s);setNotice('Local AI host started');}catch(e){setError(compactError(e))}finally{setWorking('')}}
-  async function stopHost(){setWorking('stop');setError('');try{setHost(await call<HostState>('host:stop'));setNotice('Hosting stopped. All visitor sessions were closed.');}catch(e){setError(compactError(e))}finally{setWorking('')}}
-  async function copyLocal(){try{await call('local:copy');setShareCopied(true);setTimeout(()=>setShareCopied(false),1500)}catch(e){setError(compactError(e))}}
+  async function startHost(){setWorking('start');setError('');try{const s=await call<HostState>('host:start');setHost(s);setNotice('Wi-Fi AI server started');}catch(e){setError(compactError(e))}finally{setWorking('')}}
+  async function stopHost(){setWorking('stop');setError('');try{setHost(await call<HostState>('host:stop'));setNotice('LAN server stopped. Access sessions have been closed.');}catch(e){setError(compactError(e))}finally{setWorking('')}}
+  async function copyLocal(url?:string){try{await call('local:copy',url);setShareCopied(true);setTimeout(()=>setShareCopied(false),1500)}catch(e){setError(compactError(e))}}
   async function openLocal(){try{await call('local:open')}catch(e){setError(compactError(e))}}
   async function openLink(url:string){try{await call('external:open',url)}catch(e){setError(compactError(e))}}
   function advance(){setStep(prev=>Math.min(7,prev+1));setError('')}
@@ -81,20 +112,32 @@ export default function App(){
   if(!window.anvil)return <PublicChat/>;
   if(loading)return <div className="boot-screen"><Brand/><span className="loading-copy">Preparing your workspace…</span></div>;
 
-  const stopButton=<button className="button danger-outline" onClick={stopHost} disabled={!!working}><Power size={17}/> Go offline</button>;
-  const localPanel=<div className="local-panel">
-    <div className="local-status"><span className={`local-dot ${host.online?'online':''}`}/><strong>{host.online?'Local server running':'Local server stopped'}</strong><span className="local-only">THIS PC ONLY</span></div>
-    <div className="local-address"><div><small>CHAT ADDRESS</small><code>http://127.0.0.1:3000</code></div><button className="icon-button" title="Copy local URL" aria-label="Copy local URL" onClick={()=>void copyLocal()}>{shareCopied?<Check size={17}/>:<Copy size={17}/>}</button></div>
-    <p className="local-hint">{host.online?'Chat is available in your browser on this computer. No internet access is enabled.':'Choose an installed model and start the server. This address becomes available when it is running.'}</p>
-    <div className="local-actions">{!host.online?<button className="button primary" disabled={!selected||!!working} onClick={()=>void startHost()}><Play size={16}/> {working==='start'?'Starting…':'Start local server'}</button>:<><button className="button primary" onClick={()=>void openLocal()}><ExternalLink size={16}/> Open Chat</button><button className="button secondary" onClick={()=>void copyLocal()}><Copy size={16}/> Copy link</button>{stopButton}</>}</div>
-    {!selected&&<p className="local-hint">No active model selected. Go to My models to choose one.</p>}
+
+  const stopButton=<button className="button danger-outline" onClick={stopHost} disabled={!!working}><Power size={17}/> Stop hosting</button>;
+  const preferredLan=host.lanUrls?.[0]?.url||'http://192.168.x.x:3000';
+  const accessPanel=<div className="anvil-access">
+    <div className="anvil-access-heading"><div><strong>Require access code</strong><p>Protect your AI from other people on your Wi-Fi network.</p></div>
+      <label className="anvil-switch"><input type="checkbox" checked={access.enabled} onChange={e=>void updateAccess(e.target.checked)} disabled={!!working} aria-label="Require access code"/><span/></label>
+    </div>
+    {access.enabled?<div className="anvil-code"><div><small>ACCESS CODE</small><code>{access.code||'Loading…'}</code></div><button className="button secondary small" onClick={()=>void regenerateCode()}><RefreshCw size={14}/> Regenerate</button></div>:
+      <p className="anvil-access-warning"><CircleAlert size={15}/> Anyone on your private network who has the link can use the AI.</p>}
   </div>;
+  const localPanel=<div className="local-panel">
+    <div className="local-status"><span className={`local-dot ${host.online?'online':''}`}/><strong>{host.online?'Wi-Fi server running':'Wi-Fi server stopped'}</strong><span className="local-only">PRIVATE NETWORK</span></div>
+    <div className="local-address"><div><small>WI-FI / LAN CHAT LINK</small><code>{host.online?preferredLan:'Start server to get a Wi-Fi address'}</code></div><button className="icon-button" disabled={!host.online||!host.lanUrls?.length} title="Copy Wi-Fi link" aria-label="Copy Wi-Fi link" onClick={()=>void copyLocal(preferredLan)}>{shareCopied?<Check size={17}/>:<Copy size={17}/>}</button></div>
+    {host.online&&host.lanUrls.length>1&&<div className="anvil-interface-links">{host.lanUrls.map(n=><button title={n.interface} key={n.url} onClick={()=>void copyLocal(n.url)}>{n.interface}: {n.url} <Copy size={13}/></button>)}</div>}
+    <div className="anvil-local-loopback">On this PC: <code>http://127.0.0.1:3000</code></div>
+    <p className="local-hint">{host.online?'Open the Wi-Fi link from another device on the same network. Windows Firewall must allow Anvil on Private networks. This is not publicly hosted on the internet.':'Start the server to create a link that devices connected to the same Wi-Fi can use.'}</p>
+    <div className="local-actions">{!host.online?<button className="button primary" disabled={!selected||!!working} onClick={()=>void startHost()}><Play size={16}/> {working==='start'?'Starting…':'Start Wi-Fi server'}</button>:<><button className="button primary" onClick={()=>void openLocal()}><ExternalLink size={16}/> Open Chat</button><button className="button secondary" onClick={()=>void copyLocal(preferredLan)}><Copy size={16}/> Copy Wi-Fi link</button>{stopButton}</>}</div>
+    {!selected&&<p className="local-hint">Select an installed model in My models before starting the host.</p>}
+  </div>;
+
 
   return <div className="desktop-app">
     {!wizard?<>
       <aside className="sidebar"><div className="sidebar-top"><Brand/><div className="sidebar-workspace"><div className="workspace-icon"><Monitor size={16}/></div><div><strong>My workstation</strong><small>Personal host</small></div><ChevronDown size={14}/></div></div>
       <div className="nav-label">WORKSPACE</div><nav aria-label="Main navigation">{nav.map(({key,label,icon:Icon})=><button key={key} className={`nav-item ${view===key?'active':''}`} onClick={()=>setView(key)}><Icon size={18}/>{label}{key==='console'&&host.online&&<span className="tiny-live-dot"/>}</button>)}</nav>
-      <div className="sidebar-bottom"><div className="side-runtime"><span className={`runtime-light ${ollama.online?'running':''}`}/><span>{ollama.online?'Ollama connected':'Ollama disconnected'}</span><button title="Refresh Ollama connection" onClick={()=>void refreshOllama()}><RefreshCw size={15}/></button></div><div className="side-footer"><span>ANVIL</span><span>v0.1.0 MVP</span></div></div></aside>
+      <div className="sidebar-bottom"><div className="side-runtime"><span className={`runtime-light ${ollama.online?'running':''}`}/><span>{ollama.online?'Ollama connected':'Ollama disconnected'}</span><button title="Refresh Ollama connection" onClick={()=>void refreshOllama()}><RefreshCw size={15}/></button></div><div className="side-footer"><span>ANVIL</span><span>v0.3.0 LAN</span></div></div></aside>
       <div className="app-main"><header className="app-topbar"><div className="breadcrumbs">Workspace <ChevronRight size={14}/><span>{nav.find(n=>n.key===view)?.label}</span></div><div className="top-actions"><span className="desktop-only">Windows · Local AI</span><StatusPill state={host.online?'live':'idle'}/><button className="avatar" title="Personal host">A</button></div></header>
       <main className="app-content">
       {view==='home'&&<>
@@ -115,9 +158,9 @@ export default function App(){
         <div className="overview-stats">
           <ShellCard className="overview-metric"><Cpu size={18}/><div><small>PROCESSOR</small><strong title={hardware?.cpu}>{hardware?.cpu||'Not scanned'}</strong></div></ShellCard>
           <ShellCard className="overview-metric"><MemoryStick size={18}/><div><small>SYSTEM RAM</small><strong>{hardware?`${hardware.ramTotalGb} GB`:'—'}</strong></div></ShellCard>
-          <ShellCard className="overview-metric"><HardDrive size={18}/><div><small>GRAPHICS</small><strong title={hardware?.gpu}>{hardware?.gpu||'Not scanned'}</strong></div></ShellCard>
+          <ShellCard className="overview-metric"><HardDrive size={18}/><div><small>GRAPHICS</small><strong title={hardware?.gpu}>{gpu?.percent==null?'Unavailable':gpu.percent+'%'} GPU usage</strong><small className="anvil-gpu-note">{gpu?.scope||'GPU-wide, not AI-only'}</small></div></ShellCard>
         </div>
-        <div className="overview-footnote"><ShieldCheck size={16}/> Loopback-only hosting · No public tunnel · Data stays on your computer.</div>
+        <div className="overview-footnote"><ShieldCheck size={16}/> Only private Wi-Fi / LAN devices · No public tunnel or internet exposure configured.</div>
       </>}
       {view==='discover'&&<><SectionHeading eyebrow="MATCHED TO YOUR MACHINE" title="Find your model." subtitle="Fit scores are estimates based on available memory. Run a real benchmark after downloading." action={<button className="button ghost" onClick={()=>{setWizard(true);setStep(1)}}><RefreshCw size={15}/> Rescan</button>}/><div className="recommend-feature"><div className="recommend-icon"><Sparkles size={20}/></div><div><span className="eyebrow">RECOMMENDED FIT</span><h2>{models[0]?.name}</h2><p>{models[0]?.note} · Estimated download {models[0]?.gb} GB</p></div><button className="button primary" onClick={()=>{setChoice(models[0].id);setView('models')}}>Get model <ArrowRight size={17}/></button></div><div className="model-grid">{models.map((model,i)=><ModelCard key={model.id} model={model} installed={installed.has(model.id)} selected={selected===model.id} onDownload={()=>void download(model.id)} onSelect={()=>void selectModel(model.id)} busy={!!working} highlighted={i===0}/>)}</div></>}
       {view==='models'&&<><SectionHeading eyebrow="LOCAL MODEL LIBRARY" title="Your models." subtitle="Downloaded models live on your PC and are managed by Ollama." action={<button className="button secondary" onClick={()=>void refreshOllama()}><RefreshCw size={16}/> Refresh</button>}/>
@@ -129,28 +172,33 @@ export default function App(){
         {pull&&<div className="progress-overlay" role="status"><div className="pull-title"><Download size={18}/><strong>Downloading {pull.model}</strong></div><p>{pull.status}</p><Meter value={pull.total?100*pull.completed/pull.total:0} label="Real downloaded bytes" tone="cyan"/><span>{pull.total?`${(pull.completed/1e6).toFixed(1)} / ${(pull.total/1e6).toFixed(1)} MB`:'Waiting for download progress…'}</span></div>}
       </>}
       {view==='console'&&<>
-        <SectionHeading eyebrow="PRIVATE BY DESIGN" title="Local server." subtitle="Open a private chat in your browser on this computer." action={<StatusPill state={host.online?'live':'idle'}/>}/>
+        <SectionHeading eyebrow="PRIVATE BY DESIGN" title="Local server." subtitle="Chat from phones and other devices connected to the same Wi-Fi." action={<StatusPill state={host.online?'live':'idle'}/>}/>
         <div className="console-grid">
           <ShellCard className="console-main"><div className="card-heading"><div><span className="eyebrow">SERVER CONTROLS</span><h3>Chat on your PC</h3></div><Monitor size={20} className="icon-cyan"/></div>{localPanel}</ShellCard>
           <ShellCard className="console-side"><div className="card-heading"><div><span className="eyebrow">RUNTIME</span><h3>Current configuration</h3></div><Settings2 size={18}/></div>
           <div className="config-line"><span>AI model</span><strong>{selected||'None selected'}</strong></div>
           <div className="config-line"><span>Ollama</span><strong>{ollama.online?'Connected':'Disconnected'}</strong></div>
-          <div className="config-line"><span>Server address</span><strong>127.0.0.1:3000</strong></div>
-          <div className="config-line"><span>Access</span><strong>Only this PC</strong></div>
-          <div className="config-line"><span>Concurrent requests</span><strong>2 maximum</strong></div>
+          <div className="config-line"><span>Wi-Fi address</span><strong>{host.lanUrls?.[0]?.url||'Start server'}</strong></div>
+          <div className="config-line"><span>Access code</span><strong>{access.enabled?'Required':'Disabled'}</strong></div>
+          <div className="config-line"><span>GPU usage</span><strong>{gpu?.percent==null?'Not available':gpu.percent+'%'}</strong></div>
+          <div className="config-line"><span>GPU VRAM</span><strong>{gpu?.vramUsedMb!=null?gpu.vramUsedMb+' / '+gpu.vramTotalMb+' MB':'Unavailable'}</strong></div>
+          <p className="anvil-gpu-note">{gpu?.source||'Waiting for GPU driver'} · Reports GPU-wide use, not exclusive AI usage.</p>
           <button className="button secondary full-button" onClick={()=>setView('models')}>Choose model <ArrowRight size={15}/></button></ShellCard>
         </div>
+        <ShellCard className="anvil-security-card">{accessPanel}<div className="anvil-shutdown-actions"><button className="button danger-outline" onClick={()=>void stopAi()} disabled={!!working}><Square size={15}/> Stop AI and unload model</button><button className="button danger-outline" onClick={()=>void shutDown()} disabled={!!working}><Power size={15}/> Shut down Anvil</button></div></ShellCard>
         <div className="overview-stats">
           <ShellCard className="overview-metric"><Activity size={18}/><div><small>REQUESTS PROCESSED</small><strong>{host.totalRequests}</strong></div></ShellCard>
           <ShellCard className="overview-metric"><Gauge size={18}/><div><small>ACTIVE REQUESTS</small><strong>{host.activeRequests}</strong></div></ShellCard>
-          <ShellCard className="overview-metric"><ShieldCheck size={18}/><div><small>NETWORK ACCESS</small><strong>Localhost only</strong></div></ShellCard>
+          <ShellCard className="overview-metric"><ShieldCheck size={18}/><div><small>NETWORK ACCESS</small><strong>Private LAN / Wi-Fi</strong></div></ShellCard>
         </div>
       </>}
       {view==='settings'&&<><SectionHeading eyebrow="PREFERENCES" title="Settings." subtitle="A simple, local-first setup."/>
         <div className="settings-list">
           <ShellCard className="setting-card"><div className="setting-icon"><Monitor size={20}/></div><div><h3>Hardware detection</h3><p>Refresh CPU, RAM, GPU and storage information.</p></div><button className="button secondary" onClick={()=>{setWizard(true);setStep(1)}}>Run scan</button></ShellCard>
           <ShellCard className="setting-card"><div className="setting-icon"><Terminal size={20}/></div><div><h3>Ollama</h3><p>{ollama.online?'Connected to Ollama at 127.0.0.1:11434.':'Start Ollama to download and run local models.'}</p></div><button className="button secondary" onClick={()=>void refreshOllama()}><RefreshCw size={15}/> Refresh</button></ShellCard>
-          <ShellCard className="setting-card"><div className="setting-icon"><ShieldCheck size={20}/></div><div><h3>Local access only</h3><p>The chat server listens on 127.0.0.1:3000. There is no public tunnel or invite-code requirement.</p></div><span className="small-chip selected">ENABLED</span></ShellCard>
+          <ShellCard className="setting-card"><div className="setting-icon"><Wifi size={20}/></div><div><h3>Wi-Fi / local network</h3><p>Anvil listens on port 3000 for devices on your private LAN. No public tunnel. Check Windows Firewall Private network permissions.</p></div><span className="small-chip selected">LAN ONLY</span></ShellCard>
+          <ShellCard className="anvil-security-card">{accessPanel}</ShellCard>
+          <ShellCard className="anvil-security-card"><h3>Full shutdown</h3><p>Stop the chat, unload the AI model from Ollama and exit Anvil. Ollama's own background service is not terminated.</p><button className="button danger-outline" onClick={()=>void shutDown()}><Power size={16}/> Shut down Anvil</button></ShellCard>
         </div><p className="settings-disclaimer">Anvil · Local AI for Windows · Powered by Ollama. Model compatibility estimates are not benchmarks.</p></>}
       </main></div></>:<main className="wizard-root"><div className="wizard-top"><Brand/><div className="wizard-counter">SETUP <span>{String(step+1).padStart(2,'0')} / 08</span></div><button className="wizard-exit" onClick={()=>{setWizard(false);setView('home')}} title="Exit setup"><ArrowUpRight size={17}/> Dashboard</button></div>
       <div className="wizard-progress">{steps.map((name,i)=><div className={`wizard-progress-segment ${i<=step?'filled':''}`} key={name}/>)}</div>
@@ -164,8 +212,8 @@ export default function App(){
       {step===5&&<><span className="eyebrow heat-label">MAKE IT REAL</span><h1>Bring your model home.</h1><p className="wizard-lead">Anvil uses your installed Ollama engine to download models to your own machine. Downloads show real byte progress.</p><ShellCard className="download-card"><div className="download-card-icon"><ArrowDownToLine size={31}/></div><h2>{chosen?.name}</h2><p>{chosen?.description}</p><div className="download-card-details"><span>ESTIMATED SIZE</span><strong>{chosen?.gb} GB</strong></div><div className="download-card-details"><span>LOCAL RUNTIME</span><strong>{ollama.online?'Ollama connected':'Ollama missing'}</strong></div>{installed.has(choice)?<div className="download-complete"><CheckCircle2 size={18}/> Downloaded and ready</div>:<button className="button primary full-button" onClick={()=>void download(choice)} disabled={!ollama.online||!!working}><Download size={17}/> {working==='download'?'Downloading…':'Download model'}</button>}
         {pull&&<div className="download-progress"><div className="pull-info"><strong>{pull.status}</strong><span>{pull.total?Math.round(100*pull.completed/pull.total)+'%':'Waiting for bytes…'}</span></div><Meter value={pull.total?100*pull.completed/pull.total:0} tone="cyan"/><small>{pull.total?`${Math.round(pull.completed/1e6)} of ${Math.round(pull.total/1e6)} MB`:'Progress will appear when Ollama reports it'}</small></div>}
         {!ollama.online&&<button className="text-link" onClick={()=>void openLink('https://ollama.com/download/windows')}>Install Ollama first <ExternalLink size={13}/></button>}{installed.has(choice)&&selected!==choice&&<button className="button secondary full-button" onClick={()=>void selectModel(choice)} disabled={!!working}>Set as active model <ArrowRight size={16}/></button>}</ShellCard></>}
-      {step===6&&<><span className="eyebrow heat-label">LOCAL SERVER</span><h1>Ready to serve.</h1><p className="wizard-lead">The server runs only on your computer at 127.0.0.1:3000.</p><ShellCard className="serve-card"><div className={`serve-mark ${host.online?'on':''}`}><Server size={35}/></div><StatusPill state={host.online?'live':'idle'}/><h2>{host.online?'Your local server is running.':'The forge is ready.'}</h2><p>{host.online?'http://127.0.0.1:3000':'Start the server to activate http://127.0.0.1:3000'}</p>{selected?<div className="serve-model"><Layers3 size={16}/> {selected}</div>:<div className="warning-inline"><CircleAlert size={17}/> Select an installed model in the previous step.</div>}{host.online?<div className="local-actions"><button className="button primary" onClick={()=>void openLocal()}><ExternalLink size={16}/> Open Chat</button>{stopButton}</div>:<button className="button primary" disabled={!selected||!!working} onClick={startHost}><Play size={17}/> Start server</button>}</ShellCard></>}
-      {step===7&&<><span className="eyebrow heat-label">LOCAL CHAT</span><h1>You're ready.</h1><p className="wizard-lead">Your browser chat runs on this PC only. There is no public server or external sharing.</p><ShellCard className="wizard-share-card">{localPanel}</ShellCard></>}
+      {step===6&&<><span className="eyebrow heat-label">LOCAL SERVER</span><h1>Ready to serve.</h1><p className="wizard-lead">Devices connected to your private Wi-Fi can access this server at its LAN address.</p><ShellCard className="serve-card"><div className={`serve-mark ${host.online?'on':''}`}><Server size={35}/></div><StatusPill state={host.online?'live':'idle'}/><h2>{host.online?'Your local server is running.':'The forge is ready.'}</h2><p>{host.online?'http://127.0.0.1:3000':'Start the server to activate http://127.0.0.1:3000'}</p>{selected?<div className="serve-model"><Layers3 size={16}/> {selected}</div>:<div className="warning-inline"><CircleAlert size={17}/> Select an installed model in the previous step.</div>}{host.online?<div className="local-actions"><button className="button primary" onClick={()=>void openLocal()}><ExternalLink size={16}/> Open Chat</button>{stopButton}</div>:<button className="button primary" disabled={!selected||!!working} onClick={startHost}><Play size={17}/> Start server</button>}</ShellCard></>}
+      {step===7&&<><span className="eyebrow heat-label">LOCAL CHAT</span><h1>You're ready.</h1><p className="wizard-lead">Use your computer or another device connected to the same private Wi-Fi. This is not a public internet link.</p><ShellCard className="wizard-share-card">{localPanel}</ShellCard></>}
       </div>{error&&<div className="error-banner" role="alert"><CircleAlert size={18}/><span>{error}</span><button onClick={()=>setError('')}>Dismiss</button></div>}
       <div className="wizard-actions"><button className="button ghost" onClick={back} disabled={step===0}><ArrowLeft size={17}/> Back</button><span className="wizard-step-label">{steps[step]}</span>{step<7?<button className="button primary" onClick={advance} disabled={step===1&&(!hardware||scanning)}>{step===0?'Get started':'Continue'} <ArrowRight size={17}/></button>:<button className="button primary" onClick={()=>{setWizard(false);setView('home')}}>Open dashboard <ArrowRight size={17}/></button>}{step===1&&!scanning&&<button className="button secondary" onClick={scan}><RefreshCw size={16}/> {hardware?'Rescan':'Scan PC'}</button>}</div></div></div></main>}
     {notice&&<div className="toast" role="status"><CheckCircle2 size={17}/>{notice}</div>}
