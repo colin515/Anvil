@@ -49,14 +49,6 @@ async function bodyJson(req){
   try{return JSON.parse(Buffer.concat(chunks).toString('utf8'));}
   catch{const err=new Error('Invalid JSON.');err.status=400;throw err;}
 }
-function thinkingParameter(model,mode) {
-  const supported=/gpt-oss|qwen3|deepseek-r1|deepseek-v3|phi4-reasoning|qwq/i.test(model);
-  if(mode==='off')return supported?false:undefined;
-  if(mode!=='low'&&mode!=='medium'&&mode!=='high')return undefined;
-  // gpt-oss can tune low/medium/high. Most other reasoning models only
-  // support boolean control; their reasoning depth remains model-defined.
-  return /gpt-oss/i.test(model)?mode:true;
-}
 class HostServer{
   constructor({distDir,ollamaUrl,getModel,onMetrics,port=3000,bindAddress='0.0.0.0',accessEnabled=true,accessCode}){
     this.distDir=distDir;this.ollamaUrl=ollamaUrl;this.getModel=getModel;this.onMetrics=onMetrics;
@@ -158,10 +150,7 @@ class HostServer{
         return json(res,400,{error:'A message is too large or invalid.'});
       const model=this.getModel();
       if(!model)return json(res,503,{error:'Select a local model in Anvil first.'});
-      const mode=['off','low','medium','high'].includes(data.thinking)?data.thinking:'off';
-      const think=thinkingParameter(model,mode);
       const payload={model,messages,stream:true};
-      if(think!==undefined)payload.think=think;
 
       this.total++;this.active++;this.onMetrics?.(this.status());
       const controller=new AbortController();this.controllers.add(controller);
@@ -172,7 +161,7 @@ class HostServer{
           res.writeHead(200,{'content-type':'text/event-stream; charset=utf-8','cache-control':'no-cache, no-transform','connection':'keep-alive','x-accel-buffering':'no'});
           const event=payload=>{if(!res.writableEnded&&!controller.signal.aborted)res.write('data: '+JSON.stringify(payload)+'\n\n');};
           const result=await runAutoCompletion({
-            ollamaUrl:this.ollamaUrl,model,messages,settings,think,reviewThink:thinkingParameter(model,'off'),
+            ollamaUrl:this.ollamaUrl,model,messages,settings,
             signal:controller.signal,
             onProgress:progress=>event({progress})
           });
@@ -188,8 +177,7 @@ class HostServer{
         });
         if(!response.ok||!response.body){
           const details=await response.text().catch(()=>null);
-          const hint=mode!=='off'?' The model may not support thinking. Try Off or a reasoning-capable model.':'';
-          return json(res,502,{error:`Ollama failed (${response.status}).${hint} Check that your model is loaded.`});
+          return json(res,502,{error:`Ollama failed (${response.status}). Check that your model is loaded.`});
         }
         res.writeHead(200,{'content-type':'text/event-stream; charset=utf-8','cache-control':'no-cache, no-transform','connection':'keep-alive','x-accel-buffering':'no'});
         const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='';
@@ -236,4 +224,4 @@ class HostServer{
     this.port=null;this.onMetrics?.(this.status());return this.status();
   }
 }
-module.exports={HostServer,secureMatch,privateIP,networkUrls,thinkingParameter};
+module.exports={HostServer,secureMatch,privateIP,networkUrls};
