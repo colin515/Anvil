@@ -2,7 +2,7 @@ name: Import and verify Anvil
 on:
   push:
     branches: [main]
-    paths: [source.tar.xz.b64]
+    paths: [source-parts/complete.txt]
 permissions:
   contents: write
   pages: write
@@ -16,8 +16,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          base64 --decode source.tar.xz.b64 | tar -xJf -
-          rm source.tar.xz.b64
+          cat source-parts/part*.txt | base64 --decode | tar -xJf -
+          rm -rf source-parts
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
