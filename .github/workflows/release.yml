@@ -51,11 +51,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v0.4.0-oneclick"
+          $tag = "v0.5.0-auto"
           $file = "release/Anvil-Setup.exe"
           gh release view $tag --repo "${{ github.repository }}" *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $file --clobber --repo "${{ github.repository }}"
           } else {
-            gh release create $tag $file --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "Anvil v0.4.0 — One-click Ollama startup and thinking modes" --notes "Start Everything detects or launches Ollama, chooses an installed model and starts private Wi-Fi chat. Browser chat offers Off/Low/Medium/High thinking controls (exact graded levels depend on the model). Website root redirect fixed. Requires Ollama installed and an existing downloaded model. Allow TCP 3000 on the Private Windows Firewall profile only. Unsigned preview installer."
+            gh release create $tag $file --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "Anvil v0.5.0 — Automatic Prompt Completion" --notes "Automatic prompt completion with local draft-review-refine cycles, configurable 50-99% self-rated confidence target (95% default), maximum attempts and timeout. Progress, stopping and outcome visible in saved chats. Self-ratings are not fact-verified probabilities. Includes local Wi-Fi hosting, Ollama one-click start and thinking controls. Requires Ollama installed and a downloaded model. Unsigned preview installer."
           }
