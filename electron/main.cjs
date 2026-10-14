@@ -1,6 +1,6 @@
 'use strict';
 
-const {app, BrowserWindow, ipcMain, shell} = require('electron');
+const {app, BrowserWindow, ipcMain, shell, clipboard} = require('electron');
 const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs');
@@ -100,19 +100,20 @@ function register() {
   });
   ipcMain.handle('model:benchmark',(_e,model)=>benchmarkModel(model||activeModel));
   ipcMain.handle('host:start',()=>host.start());
-  ipcMain.handle('host:publish',()=>host.publish());
+  ipcMain.handle('local:open',async()=>{if(!host.status().online)throw new Error('Start the local server first.');return shell.openExternal(host.status().localUrl);});
+  ipcMain.handle('local:copy',()=>{const link=host.status().localUrl || 'http://127.0.0.1:3000';clipboard.writeText(link);return link;});
   ipcMain.handle('host:stop',()=>host.stop());
   ipcMain.handle('host:status',()=>host.status());
   ipcMain.handle('app:state',async()=>({hardware,activeModel,host:host.status(),ollama:await ollamaStatus()}));
   ipcMain.handle('external:open',(_e,url)=>{
-    const allowed=['https://ollama.com/','https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/','https://github.com/colin515/anvil'];
+    const allowed=['https://ollama.com/','https://github.com/colin515/Anvil'];
     if(typeof url!=='string'||!allowed.some(p=>url.startsWith(p)))throw new Error('URL not allowed');
     return shell.openExternal(url);
   });
 }
 
 function createWindow() {
-  window=new BrowserWindow({width:1360,height:850,minWidth:960,minHeight:680,backgroundColor:'#0B0E13',title:'Anvil',
+  window=new BrowserWindow({width:1360,height:850,minWidth:960,minHeight:680,backgroundColor:'#1C1C1E',title:'Anvil',
     webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true}});
   window.webContents.setWindowOpenHandler(()=>({action:'deny'}));
   window.webContents.on('will-navigate',(event)=>event.preventDefault());
