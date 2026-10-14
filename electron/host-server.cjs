@@ -149,17 +149,25 @@ class HostServer{
         return json(res,400,{error:'A message is too large or invalid.'});
       const model=this.getModel();
       if(!model)return json(res,503,{error:'Select a local model in Anvil first.'});
+      const mode=['off','low','medium','high'].includes(data.thinking)?data.thinking:'off';
+      // Ollama exposes graded reasoning for gpt-oss. Other models that support
+      // reasoning generally accept a boolean; they may not expose graded effort.
+      const supportsLevels=/gpt-oss/i.test(model);
+      const think=mode==='off'?false:supportsLevels?mode:true;
+      const payload={model,messages,stream:true,think};
+
       this.total++;this.active++;this.onMetrics?.(this.status());
       const controller=new AbortController();this.controllers.add(controller);
       res.once('close',()=>controller.abort());
       try{
         const response=await fetch(`${this.ollamaUrl}/api/chat`,{
           method:'POST',headers:{'content-type':'application/json'},signal:controller.signal,
-          body:JSON.stringify({model,messages,stream:true}) // model controls context and output, no artificial token cap
+          body:JSON.stringify(payload) // no artificial token output cap
         });
         if(!response.ok||!response.body){
           const details=await response.text().catch(()=>null);
-          return json(res,502,{error:`Ollama failed (${response.status}). Check that your model is loaded.`});
+          const hint=mode!=='off'?' The model may not support thinking. Try Off or a reasoning-capable model.':'';
+          return json(res,502,{error:`Ollama failed (${response.status}).${hint} Check that your model is loaded.`});
         }
         res.writeHead(200,{'content-type':'text/event-stream; charset=utf-8','cache-control':'no-cache, no-transform','connection':'keep-alive','x-accel-buffering':'no'});
         const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='';
