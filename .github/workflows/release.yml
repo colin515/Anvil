@@ -34,6 +34,8 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Unit tests and typecheck
         run: npm run check
+      - name: Verify Electron source syntax
+        run: node --check electron/main.cjs
       - name: Package Windows installer
         run: npm run package:win
         env:
@@ -49,11 +51,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v0.2.0-local"
+          $tag = "v0.3.0-lan"
           $file = "release/Anvil-Setup.exe"
           gh release view $tag --repo "${{ github.repository }}" *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $file --clobber --repo "${{ github.repository }}"
           } else {
-            gh release create $tag $file --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "Anvil v0.2.0 — Local only" --notes "Flowforge-inspired compact UI, stable local chat URL http://127.0.0.1:3000, no Cloudflare tunnels or invite codes. Requires local Ollama. Windows x64 unsigned installer for personal testing; review SmartScreen warnings before running."
+            gh release create $tag $file --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "Anvil v0.3.0 — Private Wi-Fi hosting" --notes "Private Wi-Fi/LAN hosting with optional access codes, real GPU-wide utilization where supported, stop AI + unload, persistent multi-chat browser interface, longer messages, no message quota. Requires Ollama. Allow TCP 3000 on the Private Windows Firewall profile for LAN access. No public internet tunnel. Unsigned Windows preview installer."
           }
